@@ -1,0 +1,2 @@
+# Build TensorFlow image
+docker build -t nam012-img1 . 
