@@ -1,7 +1,7 @@
 BASE_IMG_NAME = nam012
 BUILD_CMD = docker build --network=host
-DOCKERFILE_TH = Dockerfile-PyTorch
-DOCKERFILE_TF = Dockerfile-TensorFlow
+DOCKERFILE_TH = Dockerfile-th
+DOCKERFILE_TF = Dockerfile-tf
 
 th:
 	$(BUILD_CMD) -f $(DOCKERFILE_TH) -t $(BASE_IMG_NAME)-th .

@@ -1,8 +1,9 @@
 # vscode
 .vscode
 
-# data
+# data and models
 */data
+*/models
 
 # own jupyter config
 .jupyter

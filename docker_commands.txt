@@ -1,2 +1,2 @@
-# Build TensorFlow image
-docker build -t nam012-img1 . 
+#!/bin/
+docker build --network=host -t nam012-th .
