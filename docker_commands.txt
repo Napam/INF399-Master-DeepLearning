@@ -1,2 +1,0 @@
-#!/bin/
-docker build --network=host -t nam012-th .
