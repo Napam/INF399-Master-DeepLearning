@@ -6,6 +6,7 @@ nogit*
 
 # vscode
 .vscode
+.devcontainer
 
 # data and models
 */data
