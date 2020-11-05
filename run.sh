@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 DOCKER_FLAGS=""
-GPU="all"
 ARGS=""
 FRAMEWORK="th"
 
@@ -10,11 +9,11 @@ error() {
 
 while getopts "djpg:f:" option; do
 	case $option in
-		d) DOCKER_FLAGS+="-d";;
-		g) GPU=${OPTARG};;
-		j) ARGS+="./jbook.sh ";; 
+		d) DOCKER_FLAGS+="-d ";;
 		f) FRAMEWORK=${OPTARG};;
-		p) DOCKER_FLAGS+=" --publish 5555:8888";;
+		g) DOCKER_FLAGS+="--gpus ${OPTARG} ";;
+		j) ARGS+="./jbook.sh ";; 
+		p) DOCKER_FLAGS+="--publish 5555:8888 ";;
 		*) error; exit;;	
 	esac
 done
@@ -22,7 +21,6 @@ done
 # $@ is an array or something, start at $OPTIND and rest
 ARGS+=${@:$OPTIND}
 
-
 docker run ${DOCKER_FLAGS} -it -v "$(pwd)/volume":/app \
-	--ipc=host --rm --gpus ${GPU} --name ${FRAMEWORK}-nam012-cntr nam012-${FRAMEWORK} ${ARGS}
+	--ipc=host --rm --name ${FRAMEWORK}-nam012-cntr nam012-${FRAMEWORK} ${ARGS}
 
