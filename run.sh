@@ -23,6 +23,6 @@ done
 ARGS+=${@:$OPTIND}
 
 
-docker run ${DOCKER_FLAGS} -it -v $(pwd)/volume:/app \
+docker run ${DOCKER_FLAGS} -it -v "$(pwd)/volume":/app \
 	--ipc=host --rm --gpus ${GPU} --name ${FRAMEWORK}-nam012-cntr nam012-${FRAMEWORK} ${ARGS}
 
