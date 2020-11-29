@@ -21,6 +21,8 @@ done
 # $@ is an array or something, start at $OPTIND and rest
 ARGS+=${@:$OPTIND}
 
-docker run ${DOCKER_FLAGS} -it -v "$(pwd)/volume":/app \
+docker run ${DOCKER_FLAGS} -it \
+    -v "$(pwd)/volume":/app  \
+    -v "/data/nam012/Blender/volume/generated_data":/mnt/generated_data\
 	--ipc=host --rm --name ${FRAMEWORK}-nam012-cntr nam012-${FRAMEWORK} ${ARGS}
 
