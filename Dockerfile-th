@@ -3,11 +3,12 @@ FROM pytorch/pytorch:1.6.0-cuda10.1-cudnn7-runtime
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y \
+    iputils-ping \
     screen \
     sqlite3 \
-&& apt-get -y autoremove && rm -rf /var/lib/apy/lists/*
+&& apt-get -y autoremove && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt /tmp/
-RUN pip install -r /tmp/requirements.txt
+RUN pip --no-cache-dir install -r /tmp/requirements.txt
 
 CMD ["/bin/bash"]

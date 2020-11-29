@@ -7,11 +7,12 @@ error() {
 	echo "u do sumting wong"
 }
 
-while getopts "djpg:f:" option; do
+while getopts "df:g:ijp*" option; do
 	case $option in
 		d) DOCKER_FLAGS+="-d ";;
 		f) FRAMEWORK=${OPTARG};;
 		g) DOCKER_FLAGS+="--gpus ${OPTARG} ";;
+        i) DOCKER_FLAGS+="--net host ";;
 		j) ARGS+="./jbook.sh ";; 
 		p) DOCKER_FLAGS+="--publish 5555:8888 ";;
 		*) error; exit;;	
@@ -23,6 +24,6 @@ ARGS+=${@:$OPTIND}
 
 docker run ${DOCKER_FLAGS} -it \
     -v "$(pwd)/volume":/app  \
-    -v "/data/nam012/Blender/volume/generated_data":/mnt/generated_data\
-	--ipc=host --rm --name ${FRAMEWORK}-nam012-cntr nam012-${FRAMEWORK} ${ARGS}
+    -v "/data/nam012/Blender/volume/generated_data":/mnt/generated_data \
+    --rm --name ${FRAMEWORK}-nam012-cntr nam012-${FRAMEWORK} ${ARGS}
 
