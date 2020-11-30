@@ -2,8 +2,11 @@ FROM pytorch/pytorch:1.7.0-cuda11.0-cudnn8-runtime
 
 WORKDIR /app
 
+#libgl1-mesa-glx is for cv2 to work
+
 RUN apt-get update && apt-get install -y \
     iputils-ping \
+    libgl1-mesa-glx \
     screen \
     sqlite3 \
 && apt-get -y autoremove && rm -rf /var/lib/apt/lists/*
