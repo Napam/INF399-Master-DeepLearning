@@ -188,8 +188,7 @@ print(f'Found {len(models)} models in hubconf:')
 pprint(models)
 
 print_width = 60
-old_default_cache = torch.hub.DEFAULT_CACHE_DIR
-torch.hub.DEFAULT_CACHE_DIR = '.'
+torch.hub.set_dir('./torch_cache/')
 for model in models:
     print(f'{f"":=^{print_width}}')
     print('||'f'{f" Downloading {model} ":^{print_width-4}}''||')
