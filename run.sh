@@ -23,7 +23,7 @@ done
 ARGS+=${@:$OPTIND}
 
 docker run ${DOCKER_FLAGS} -it \
-    -v "$(pwd)/volume":/app  \
+    -v "$(pwd)/volume":/app \
     -v "/data/nam012/Blender/volume/generated_data":/mnt/generated_data \
     --rm --name ${FRAMEWORK}-nam012-cntr nam012-${FRAMEWORK} ${ARGS}
 
