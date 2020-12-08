@@ -2,15 +2,19 @@ import sqlite3 as db
 import pandas as pd 
 import numpy as np 
 from torch.utils.data import Dataset
-from typing import Iterable, Optional, Sequence, Union, Callable
+from typing import Iterable, Optional, Sequence, Union, Callable, List, Tuple
 from torch import nn
 import torch.nn.functional as F
 import torch
 from PIL import Image
 import os 
 from skimage import io
+from abc import abstractmethod, ABC
+from pprint import pprint
+from matplotlib import pyplot as plt 
+from matplotlib import patches
 
-class BlenderDataset(Dataset):
+class BlenderDatasetBase(Dataset, ABC):
     def __init__(
         self, 
         data_dir: str,
@@ -43,6 +47,9 @@ class BlenderDataset(Dataset):
 
         self.img_dir = os.path.join(data_dir, 'images')
 
+        with open(os.path.join(data_dir, 'metadata.txt')) as f:
+            self.num2name = eval(f.readline())
+
         self.batch_size = batch_size
         self.data_dir = data_dir
         self.preprocessor = preprocessor
@@ -55,11 +62,37 @@ class BlenderDataset(Dataset):
     def _get_batch_indices(self, batchnr: int) -> Iterable:
         return self.indices[self.batch_size*batchnr:self.batch_size*(batchnr+1)]
 
-    def _get_imgs(self): ...
-
-    def _get_labels(self, batchnr: int) -> pd.DataFrame: 
+    def get_labels(self, batchnr: int) -> pd.DataFrame: 
         indices = self._get_batch_indices(batchnr)
         return self.df.query('imgnr in @indices').loc[:,'class_':]
+
+    @abstractmethod
+    def get_batch(self, batchnr: int): ...
+
+    def __getitem__(self, batchnr: int):
+        return self.get_batch(batchnr)
+
+
+class BlenderStereoDataset(BlenderDatasetBase):
+    def __init__(
+        self, 
+        data_dir: str,
+        table: str,
+        batch_size: int,
+        n_classes: Optional[int] = None, 
+        shuffle: bool=True,
+        preprocessor: Optional[Callable[[torch.tensor], torch.tensor]] = None,
+        *ppargs,
+        **ppkwargs
+        ):
+        '''
+        data_dir: str, path to blender generated_data directory
+        table: str, name of sqlite3 table
+        '''
+
+        super().__init__(
+            data_dir, table, batch_size, n_classes, shuffle, preprocessor, *ppargs, **ppkwargs)
+
 
     def get_batch(self, batchnr: int):
         '''
@@ -87,20 +120,99 @@ class BlenderDataset(Dataset):
         y_batch = self.df.query('imgnr in @batch_indices')[['x','y','z','class_']]
         return X_batch, y_batch
 
-    def __getitem__(self, batchnr: int):
-        return self.get_batch(batchnr)
+
+class BlenderStandardDataset(BlenderDatasetBase):
+    def __init__(
+        self, 
+        data_dir: str,
+        table: str,
+        batch_size: int,
+        n_classes: Optional[int] = None, 
+        shuffle: bool=True,
+        preprocessor: Optional[Callable[[torch.tensor], torch.tensor]] = None,
+        *ppargs,
+        **ppkwargs
+        ):
+        '''
+        data_dir: str, path to blender generated_data directory
+        table: str, name of sqlite3 table
+        '''
+
+        super().__init__(
+            data_dir, table, batch_size, n_classes, shuffle, preprocessor, *ppargs, **ppkwargs)
+
+
+    def get_batch(self, batchnr: int) -> Tuple[List[np.ndarray],  List[Tuple[Sequence[int], Sequence[Sequence[float]]]]]:
+        '''
+        Get batch
+        
+        If preprocess function is found in self, then things will be preprocessed
+        '''
+        # Get indices of current batch
+        # indices correspond to imgnr
+        batch_indices = self._get_batch_indices(batchnr)
+        X_batch: List[np.ndarray] = [
+            io.imread(os.path.join(self.img_dir, f'img{i}.png')) for i in batch_indices
+        ]
+
+        # If preprocessor function is given
+        if self.preprocessor is not None:
+            for i in range(self.batch_size):
+                X_batch[i] = self.preprocessor(X_batch[i], *self.ppargs, **self.ppkwargs)
+        
+        y_batch: List[Tuple[Sequence[int], Sequence[Sequence[float]]]] = []
+
+        for i in batch_indices:
+            temp = self.df.query('imgnr == @i').values
+            # 0th column: imgnr, 1st column: class_, rest is bbox
+            y_batch.append((temp[:,1].astype(int), temp[:,2:]))
+
+        return X_batch, y_batch
+
+    def plot_bbox(self, img, bboxes, ax):
+        img_h, img_w = img.shape[:-1]
+
+        for class_, (x, y, w, h) in zip(*bboxes):
+            topLeftCorner = (x*img_h, y*img_w)
+            ax.add_patch(patches.Rectangle(
+                topLeftCorner, 
+                w*img_w, 
+                h*img_h, 
+                facecolor='none', 
+                edgecolor='red', 
+                linewidth=2,
+                alpha=0.4
+            ))
+            ax.text(
+                x=topLeftCorner[0], 
+                y=topLeftCorner[1], 
+                s=self.num2name[int(class_)], 
+                bbox=dict(facecolor='red', alpha=0.4, linewidth=2, edgecolor='none'), 
+                color='w',
+                fontsize=10
+            )
+
+    def plot_batch(self, batchnr: int):
+        imgs, bboxes = self.get_batch(batchnr)
+        fig, axes = plt.subplots(1, len(imgs), figsize=(7,5))
+
+        for img, bboxes_for_img, ax in zip(imgs, bboxes, np.ravel(axes)):
+            ax.imshow(img)
+            self.plot_bbox(img, bboxes_for_img, ax)
+            
 
 if __name__ == '__main__': 
-    thing = BlenderDataset(
-        data_dir='/mnt/generated_data',
-        table='bboxes_xyz',
-        batch_size=2
+    thing = BlenderStandardDataset(
+        data_dir='/mnt/blendervol/objdet_std_data',
+        table='bboxes_std',
+        batch_size=4
     )
 
     X, y = thing.get_batch(0)
+    pprint(y)
 
-    print('X')
-    print(X[0][0].shape)
-    print(X[0][1].shape)
-    print('y')
-    print(y)
+    # print('X')
+    # print(X[0][0].shape)
+    # print(X[0][1].shape)
+    # print('y')
+    # print(y)
