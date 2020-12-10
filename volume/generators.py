@@ -34,7 +34,7 @@ class BlenderDatasetBase(Dataset, ABC):
         self.c = self.con.cursor()
 
         self.df: pd.DataFrame = pd.read_sql_query(f'SELECT * FROM {table}', con=self.con)
-        self.n = len(self.df)
+        self.n = len(pd.unique(self.df['imgnr']))
 
         if n_classes is None:
             n_classes = len(self.df['class_'].unique())
@@ -57,17 +57,25 @@ class BlenderDatasetBase(Dataset, ABC):
         self.ppkwargs = ppkwargs
 
     def __len__(self) -> int:
-        return self.n // self.batch_size
+        return (self.n // self.batch_size) - 1
 
     def _get_batch_indices(self, batchnr: int) -> Iterable:
+        # print(f'From {self.batch_size*batchnr} to {self.batch_size*(batchnr+1)}')
         return self.indices[self.batch_size*batchnr:self.batch_size*(batchnr+1)]
+
+    def get_image(self, path: str):
+        img: np.ndarray = io.imread(path)
+        return img
 
     def get_labels(self, batchnr: int) -> pd.DataFrame: 
         indices = self._get_batch_indices(batchnr)
         return self.df.query('imgnr in @indices').loc[:,'class_':]
 
     @abstractmethod
-    def get_batch(self, batchnr: int): ...
+    def get_batch(self, batchnr: int):
+        # print('AAAAAAAAA')
+        if batchnr == len(self):
+            raise StopIteration
 
     def __getitem__(self, batchnr: int):
         return self.get_batch(batchnr)
@@ -102,7 +110,10 @@ class BlenderStereoDataset(BlenderDatasetBase):
         '''
         # Get indices of current batch
         # indices correspond to imgnr
+        super().get_batch(batchnr)
+
         batch_indices = self._get_batch_indices(batchnr)
+
         X_batch = [
             (
                 # Transpose to C H W
@@ -142,7 +153,7 @@ class BlenderStandardDataset(BlenderDatasetBase):
             data_dir, table, batch_size, n_classes, shuffle, preprocessor, *ppargs, **ppkwargs)
 
 
-    def get_batch(self, batchnr: int) -> Tuple[List[np.ndarray],  List[Tuple[Sequence[int], Sequence[Sequence[float]]]]]:
+    def get_batch(self, batchnr: int) -> Tuple[List[np.ndarray], List[Tuple[Sequence[int], Sequence[Sequence[float]]]]]:
         '''
         Get batch
         
@@ -150,9 +161,11 @@ class BlenderStandardDataset(BlenderDatasetBase):
         '''
         # Get indices of current batch
         # indices correspond to imgnr
+        super().get_batch(batchnr)
+
         batch_indices = self._get_batch_indices(batchnr)
         X_batch: List[np.ndarray] = [
-            io.imread(os.path.join(self.img_dir, f'img{i}.png')) for i in batch_indices
+            self.get_image(os.path.join(self.img_dir, f'img{i}.png')) for i in batch_indices
         ]
 
         # If preprocessor function is given
@@ -194,6 +207,7 @@ class BlenderStandardDataset(BlenderDatasetBase):
 
     def plot_batch(self, batchnr: int):
         imgs, bboxes = self.get_batch(batchnr)
+        print(imgs)
         fig, axes = plt.subplots(1, len(imgs), figsize=(7,5))
 
         for img, bboxes_for_img, ax in zip(imgs, bboxes, np.ravel(axes)):
