@@ -39,9 +39,7 @@ class BlenderDatasetBase(Dataset, ABC):
         if imgnrs is not None:
             query += f' WHERE imgnr IN ({",".join(str(i) for i in imgnrs)})'
 
-        print(query)
-        self.df: pd.DataFrame = pd.read_sql_query(query, con=self.con)
-        print(self.df)
+        self.df: pd.DataFrame = pd.read_sql_query(query, con=self.con)        
 
         self.n = len(pd.unique(self.df['imgnr']))
 
@@ -66,7 +64,7 @@ class BlenderDatasetBase(Dataset, ABC):
         self.ppkwargs = ppkwargs
 
     def __len__(self) -> int:
-        return (self.n // self.batch_size) - 1
+        return self.n // self.batch_size
 
     def _get_batch_indices(self, batchnr: int) -> Iterable:
         # print(f'From {self.batch_size*batchnr} to {self.batch_size*(batchnr+1)}')
@@ -81,12 +79,12 @@ class BlenderDatasetBase(Dataset, ABC):
         return self.df.query('imgnr in @indices').loc[:,'class_':]
 
     @abstractmethod
-    def get_batch(self, batchnr: int):
-        # print('AAAAAAAAA')
-        if batchnr == len(self):
-            raise StopIteration
+    def get_batch(self, batchnr: int): ...
 
     def __getitem__(self, batchnr: int):
+        # zero indexes, so much stop one iteration before len
+        if batchnr >= len(self):
+            raise StopIteration
         return self.get_batch(batchnr)
 
 
@@ -119,8 +117,6 @@ class BlenderStereoDataset(BlenderDatasetBase):
         '''
         # Get indices of current batch
         # indices correspond to imgnr
-        super().get_batch(batchnr)
-
         batch_indices = self._get_batch_indices(batchnr)
 
         X_batch = [
@@ -179,7 +175,6 @@ class BlenderStandardDataset(BlenderDatasetBase):
         '''
         # Get indices of current batch
         # indices correspond to imgnr
-        super().get_batch(batchnr)
 
         batch_indices = self._get_batch_indices(batchnr)
         X_batch: List[np.ndarray] = [
@@ -276,6 +271,12 @@ class TorchStandardDataset(BlenderStandardDataset):
             } 
         
         return X_batch, y_batch
+
+
+    def plot_batch(self, batchnr: int):
+        (img,), (bboxes,) = super().get_batch(batchnr)
+        plt.imshow(img)
+        self.plot_bbox(img, bboxes, plt.gca())
             
 
 if __name__ == '__main__': 
