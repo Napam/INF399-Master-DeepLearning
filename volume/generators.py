@@ -1,3 +1,11 @@
+'''
+IMPORTANT INFO!!!
+
+DETR is made to output [class, (center_x, center_y, width, height)]!!!!!!!
+
+WHILE BLENDER DATASET IS (AT THIS TIME) [class, (topLeftX, topLeftY, width, height)]!!!!!!!!!!!!!
+'''
+
 import sqlite3 as db 
 import pandas as pd 
 import numpy as np 
