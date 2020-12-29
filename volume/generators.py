@@ -273,10 +273,15 @@ class TorchStandardDataset(BlenderStandardDataset):
         X_batch: torch.Tensor = torch.as_tensor(X_batch[0], device=self.device, dtype=torch.float32).permute((2,0,1)) 
         
         # None device will default to CPU or something (it doesn't crash hehe)
-        y_batch: List[Dict[str, torch.tensor]] = {
+        y_batch: List[Dict[str, torch.Tensor]] = {
                 'labels': torch.as_tensor(y_batch[0][0], dtype=torch.long, device=self.device), 
                 'boxes': torch.as_tensor(y_batch[0][1], dtype=torch.float32, device=self.device)
             } 
+
+        # Monkey patch hehe
+        boxestensor: torch.Tensor = y_batch['boxes']
+        boxestensor[:,0] = boxestensor[:,0] + boxestensor[:,2] * 0.5 # x + w / 2
+        boxestensor[:,1] = boxestensor[:,1] + boxestensor[:,3] * 0.5 # y + h / 2
         
         return X_batch, y_batch
 
