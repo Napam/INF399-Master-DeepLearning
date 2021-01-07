@@ -279,6 +279,7 @@ class TorchStandardDataset(BlenderStandardDataset):
             } 
 
         # Monkey patch hehe
+        # tlx, tly, w, h (tl = top left) ---> cx, cy, w, h
         boxestensor: torch.Tensor = y_batch['boxes']
         boxestensor[:,0] = boxestensor[:,0] + boxestensor[:,2] * 0.5 # x + w / 2
         boxestensor[:,1] = boxestensor[:,1] + boxestensor[:,3] * 0.5 # y + h / 2
