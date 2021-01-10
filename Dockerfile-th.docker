@@ -1,10 +1,11 @@
-# Some python packages requires GCC compiler, devel has that
-FROM pytorch/pytorch:1.7.0-cuda11.0-cudnn8-devel 
+FROM pytorch/pytorch:1.7.0-cuda11.0-cudnn8-runtime
 
 WORKDIR /app
 
+#gcc since some Python packages requires compiling
 #libgl1-mesa-glx and libglib2.0-0 is for cv2 to work
 RUN apt-get update && apt-get install -y \
+    gcc \
     iputils-ping \
     libgl1-mesa-glx \
     libglib2.0-0 \ 
@@ -14,5 +15,8 @@ RUN apt-get update && apt-get install -y \
 
 COPY requirements.txt /tmp/
 RUN pip --no-cache-dir install -r /tmp/requirements.txt
+
+# Remove build tools
+RUN apt-get -y --purge autoremove gcc
 
 CMD ["/bin/bash"]
