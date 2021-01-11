@@ -22,9 +22,12 @@ from pprint import pprint
 from matplotlib import pyplot as plt 
 from matplotlib import patches
 
+def np_to_torch_img(img: np.ndarray):
+    # np.ndarray[H, W, C] --> torch.Tensor[C,H,W]
+    return torch.as_tensor(img, dtype=torch.float32).permute((2,0,1))
+
 class BlenderDatasetBase(Dataset, ABC):
-    def __init__(
-            self, 
+    def __init__(self, 
             data_dir: str,
             table: str,
             batch_size: int,
@@ -96,55 +99,6 @@ class BlenderDatasetBase(Dataset, ABC):
         return self.get_batch(batchnr)
 
 
-class BlenderStereoDataset(BlenderDatasetBase):
-    def __init__(
-            self, 
-            data_dir: str,
-            table: str,
-            batch_size: int,
-            n_classes: Optional[int] = None, 
-            shuffle: bool=True,
-            preprocessor: Optional[Callable[[torch.tensor], torch.tensor]] = None,
-            *ppargs,
-            **ppkwargs
-        ):
-        '''
-        data_dir: str, path to blender generated_data directory
-        table: str, name of sqlite3 table
-        '''
-
-        super().__init__(
-            data_dir, table, batch_size, n_classes, shuffle, preprocessor, *ppargs, **ppkwargs)
-
-
-    def get_batch(self, batchnr: int):
-        '''
-        Get batch
-        
-        If preprocess function is found in self, then things will be preprocessed
-        '''
-        # Get indices of current batch
-        # indices correspond to imgnr
-        batch_indices = self._get_batch_indices(batchnr)
-
-        X_batch = [
-            (
-                # Transpose to C H W
-                torch.tensor(io.imread(os.path.join(self.img_dir, f'img{i}_L.png')).transpose((2,1,0))),
-                torch.tensor(io.imread(os.path.join(self.img_dir, f'img{i}_R.png')).transpose((2,1,0))),
-            )
-            for i in batch_indices
-        ]
-
-        # If preprocessor function is given
-        if self.preprocessor is not None:
-            for i in range(self.batch_size):
-                X_batch[i] = self.preprocessor(X_batch[i], *self.ppargs, **self.ppkwargs)
-        
-        y_batch = self.df.query('imgnr in @batch_indices')[['x','y','z','class_']]
-        return X_batch, y_batch
-
-
 class BlenderStandardDataset(BlenderDatasetBase):
     def __init__(
         self, 
@@ -174,8 +128,12 @@ class BlenderStandardDataset(BlenderDatasetBase):
             **ppkwargs
         )    
 
+    def get_batch_images(self, batch_indices: Iterable):
+        return [
+            self.get_image(os.path.join(self.img_dir, f'img{i}.png')) for i in batch_indices
+        ]
 
-    def get_batch(self, batchnr: int) -> Tuple[List[Sequence[Sequence[Sequence[float]]]], List[Tuple[Sequence[int], Sequence[Sequence[float]]]]]:
+    def get_batch(self, batchnr: int) -> Tuple[List[Tuple[Sequence[Sequence[Sequence[float]]]]], List[Tuple[Sequence[int], Sequence[Sequence[float]]]]]:
         '''
         Get batch
         
@@ -184,10 +142,8 @@ class BlenderStandardDataset(BlenderDatasetBase):
         # Get indices of current batch
         # indices correspond to imgnr
 
-        batch_indices = self._get_batch_indices(batchnr)
-        X_batch: List[np.ndarray] = [
-            self.get_image(os.path.join(self.img_dir, f'img{i}.png')) for i in batch_indices
-        ]
+        batch_indices: Iterable = self._get_batch_indices(batchnr)
+        X_batch: List[np.ndarray] = self.get_batch_images(batch_indices)
 
         # If preprocessor function is given
         if self.preprocessor is not None:
@@ -226,10 +182,61 @@ class BlenderStandardDataset(BlenderDatasetBase):
                 fontsize=10
             )
 
-    def plot_batch(self, batchnr: int):
+    def plot_batch(self, batchnr: int, figsize: Optional[Sequence[int]] = None):
         imgs, bboxes = self.get_batch(batchnr)
         # print(imgs)
-        fig, axes = plt.subplots(1, len(imgs), figsize=(7,5))
+        if figsize is None:
+            figsize = (7,5)
+
+        fig, axes = plt.subplots(1, len(imgs), figsize=figsize)
+
+        for img, bboxes_for_img, ax in zip(imgs, bboxes, np.ravel(axes)):
+            ax.imshow(img)
+            self.plot_bbox(img, bboxes_for_img, ax)
+
+
+class BlenderStereoDataset(BlenderStandardDataset):
+    def __init__(self,
+            data_dir: str,
+            table: str,
+            batch_size: int,
+            imgnrs: Optional[Iterable[int]]=None,
+            n_classes: Optional[int]=None,
+            shuffle: bool=True,
+            preprocessor: Optional[Callable[[torch.tensor], torch.tensor]]=None,
+            *ppargs,
+            **ppkwargs
+        ):
+
+        super().__init__(
+            data_dir, 
+            table, 
+            batch_size, 
+            imgnrs=imgnrs, 
+            n_classes=n_classes, 
+            shuffle=shuffle, 
+            preprocessor=preprocessor, 
+            *ppargs, 
+            **ppkwargs
+        )
+
+    def get_batch_images(self, batch_indices: int) -> List[Tuple[np.ndarray]]:
+        return [
+            (
+                self.get_image(os.path.join(self.img_dir, f'img{i}_L.png')),
+                self.get_image(os.path.join(self.img_dir, f'img{i}_R.png'))
+            ) for i in batch_indices
+        ]
+
+    def plot_batch(self, batchnr: int, figsize: Optional[Sequence[int]] = None):
+        imgs, bboxes = self.get_batch(batchnr)
+        # Pick out left images
+        imgs = [leftright[0] for leftright in imgs]
+
+        if figsize is None:
+            figsize = (7,5)
+
+        fig, axes = plt.subplots(1, len(imgs), figsize=figsize)
 
         for img, bboxes_for_img, ax in zip(imgs, bboxes, np.ravel(axes)):
             ax.imshow(img)
@@ -237,19 +244,18 @@ class BlenderStandardDataset(BlenderDatasetBase):
 
 
 class TorchStandardDataset(BlenderStandardDataset):
-    def __init__(
-            self, 
-            data_dir: str,
-            table: str,
-            batch_size: Optional[int] = None, # Unused
-            imgnrs: Optional[Iterable[int]] = None,
-            n_classes: Optional[int] = None, 
-            shuffle: bool=True,
-            preprocessor: Optional[Callable[[torch.tensor], torch.tensor]] = None,
-            device: Optional[torch.device] = None,
-            *ppargs,
-            **ppkwargs
-        ):
+    def __init__(self, 
+        data_dir: str,
+        table: str,
+        batch_size: Optional[int] = None, # Unused
+        imgnrs: Optional[Iterable[int]] = None,
+        n_classes: Optional[int] = None, 
+        shuffle: bool=True,
+        preprocessor: Optional[Callable[[torch.tensor], torch.tensor]] = None,
+        device: Optional[torch.device] = None,
+        *ppargs,
+        **ppkwargs
+    ):
         '''
         data_dir: str, path to blender generated_data directory
         table: str, name of sqlite3 table
@@ -270,10 +276,10 @@ class TorchStandardDataset(BlenderStandardDataset):
     def get_batch(self, batchnr: int) -> Tuple[List[torch.Tensor], List[Dict[str, torch.Tensor]]]:
         X_batch, y_batch = super().get_batch(batchnr)
 
-        X_batch: torch.Tensor = torch.as_tensor(X_batch[0], device=self.device, dtype=torch.float32).permute((2,0,1)) 
+        X_batch: torch.Tensor = np_to_torch_img(X_batch[0]).to(self.device)
         
         # None device will default to CPU or something (it doesn't crash hehe)
-        y_batch: List[Dict[str, torch.Tensor]] = {
+        y_batch: Dict[str, torch.Tensor] = {
                 'labels': torch.as_tensor(y_batch[0][0], dtype=torch.long, device=self.device), 
                 'boxes': torch.as_tensor(y_batch[0][1], dtype=torch.float32, device=self.device)
             } 
@@ -293,13 +299,79 @@ class TorchStandardDataset(BlenderStandardDataset):
         self.plot_bbox(img, bboxes, plt.gca())
             
 
+class TorchStereoDataset(BlenderStereoDataset):
+    def __init__(self, 
+        data_dir: str,
+        table: str,
+        batch_size: int = 1, # not used
+        imgnrs: Optional[Iterable[int]] = None,
+        n_classes: Optional[int] =  None,
+        shuffle: bool = True,
+        preprocessor: Optional[Callable[[torch.tensor], torch.tensor]] = None, 
+        device: Optional[torch.device] = None,
+        *ppargs, 
+        **ppkwargs
+    ):
+        super().__init__(
+            data_dir, 
+            table, 
+            1, 
+            imgnrs=imgnrs, 
+            n_classes=n_classes, 
+            shuffle=shuffle, 
+            preprocessor=preprocessor, 
+            *ppargs, 
+            **ppkwargs
+        )
+        self.device = device
+    
+    def get_batch(self, batchnr: int) -> Tuple[List[Sequence[Sequence[Sequence[float]]]], List[Tuple[Sequence[int], Sequence[Sequence[float]]]]]:
+        X_batch, y_batch =  super().get_batch(batchnr)
+        
+        # List of length 1 of tuples that contains left and right images (H, W, C)
+        X_batch: List[Tuple[np.ndarray]]
+        X_batch: Tuple[np.ndarray] = X_batch[0]
+        X_batch: Tuple[torch.Tensor] = (np_to_torch_img(X_batch[0]).to(self.device), 
+                                        np_to_torch_img(X_batch[1]).to(self.device))
+
+        # None device will default to CPU or something (it doesn't crash hehe)
+        y_batch: List[Dict[str, torch.Tensor]] = {
+                'labels': torch.as_tensor(y_batch[0][0], dtype=torch.long, device=self.device), 
+                'boxes': torch.as_tensor(y_batch[0][1], dtype=torch.float32, device=self.device)
+            } 
+
+        # Monkey patch hehe
+        # tlx, tly, w, h (tl = top left) ---> cx, cy, w, h
+        boxestensor: torch.Tensor = y_batch['boxes']
+        boxestensor[:,0] = boxestensor[:,0] + boxestensor[:,2] * 0.5 # x + w / 2
+        boxestensor[:,1] = boxestensor[:,1] + boxestensor[:,3] * 0.5 # y + h / 2
+        return X_batch, y_batch
+
+    def plot_batch(self, batchnr: int):
+        (img,), (bboxes,) = super().get_batch(batchnr)
+        img = img[0]
+        plt.imshow(img)
+        self.plot_bbox(img, bboxes, plt.gca())
+
 if __name__ == '__main__': 
-    thing = BlenderStandardDataset(
-        data_dir='/mnt/blendervol/objdet_std_data',
+    thing = TorchStereoDataset(
+        data_dir='/mnt/blendervol/leftright_left_data',
         table='bboxes_std',
-        batch_size=4,
-        imgnrs=(1,1,1)
+        batch_size=1,
+        imgnrs=range(0,1000)
     )
+    
+    X, y = thing.get_batch(0)
+
+    print(X)
+    print(y)
+
+    # thing = BlenderStandardDataset(
+    #     data_dir='/mnt/blendervol/objdet_std_data',
+    #     table='bboxes_std',
+    #     batch_size=4,
+    #     imgnrs=(1,1,1)
+    # )
 
     # X, y = thing.get_batch(0)
     # pprint(y)
