@@ -331,8 +331,8 @@ class TorchStereoDataset(BlenderStereoDataset):
         # List of length 1 of tuples that contains left and right images (H, W, C)
         X_batch: List[Tuple[np.ndarray]]
         X_batch: Tuple[np.ndarray] = X_batch[0]
-        X_batch: Tuple[torch.Tensor] = (np_to_torch_img(X_batch[0]).to(self.device), 
-                                        np_to_torch_img(X_batch[1]).to(self.device))
+        X_batch: Tuple[torch.Tensor] = (np_to_torch_img(X_batch[0]).unsqueeze(0).to(self.device), 
+                                        np_to_torch_img(X_batch[1]).unsqueeze(0).to(self.device))
 
         # None device will default to CPU or something (it doesn't crash hehe)
         y_batch: List[Dict[str, torch.Tensor]] = {
