@@ -1,10 +1,14 @@
-import numpy as np
+from typing import Generic, Optional, Tuple
 
-def dict_union_update(a: dict, b: dict):
-    '''Updates "a" with the union of "a" and "b"'''
-    a.update((                                   # Set union
-        (key, b.get(key, a.get(key))) for key in a.keys() & b.keys()
-    ))
+from typing_extensions import IntVar
+import numpy as np
+from torchvision.models import resnet50
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import torchvision.transforms as T
+import utils
+from utils import debugt
     
 
 class Encoder(nn.Module):
@@ -42,15 +46,12 @@ class Encoder(nn.Module):
         )
     
         self_state_dict = self.state_dict()
-        dict_union_update(self_state_dict, state_dict)
+        utils.dict_union_update(self_state_dict, state_dict)
         self.load_state_dict(self_state_dict)
         print('Encoder successfully loaded with pretrained weights')
 
     def forward(self, inputs):
         # propagate inputs through ResNet-50 up to avg-pool layer
-        if not isinstance(inputs, torch.Tensor):
-            inputs = torch.stack(inputs, dim=0).to(device)
-
         x = self.backbone.conv1(inputs)
         x = self.backbone.bn1(x)
         x = self.backbone.relu(x)
@@ -75,23 +76,26 @@ class Encoder(nn.Module):
         # propagate through the transformer
         h = self.transformer(pos + 0.1 * h.flatten(2).permute(2, 0, 1),
                              self.query_pos.unsqueeze(1)).transpose(0, 1)
+        # Now shape is (1, 100, 256)
         
-        return h
+        # want to return (1, 1, 100, 256) to get "standard shape"
+        return h.unsqueeze(0)
     
     
 class Decoder(nn.Module):
-    def __init__(self, num_classes, hidden_dim: int=256):
+    def __init__(self, num_classes, hidden_dim: int=256, merge_hidden_dim: int = 64):
         '''
         num_classes: int, should be number of classes WITHOUT "no object" class
         '''
         super().__init__()
-        
-        merge_hidden_dim = 64
-                
+            
+        # common kwargs
+        kwargs = {'kernel_size':1, 'stride':1}
+
         # For latent space merging, use 1x1 convs
-        self.merger1 = nn.Conv2d(in_channels=2, out_channels=merge_hidden_dim, kernel_size=1, stride=1)
-        self.merger2 = nn.Conv2d(in_channels=merge_hidden_dim, out_channels=merge_hidden_dim, kernel_size=1, stride=1)
-        self.merger3 = nn.Conv2d(in_channels=merge_hidden_dim, out_channels=1, kernel_size=1, stride=1)
+        self.merger1 = nn.Conv2d(in_channels=2, out_channels=merge_hidden_dim, **kwargs)
+        self.merger2 = nn.Conv2d(in_channels=merge_hidden_dim, out_channels=merge_hidden_dim, **kwargs)
+        self.merger3 = nn.Conv2d(in_channels=merge_hidden_dim, out_channels=1, **kwargs)
         
         self.linear_pre_class = nn.Linear(in_features=hidden_dim, out_features=hidden_dim)
         self.linear_pre_bbox = nn.Linear(in_features=hidden_dim, out_features=hidden_dim)
@@ -116,7 +120,11 @@ class Decoder(nn.Module):
         # (1, 100, 256)
         return h2
         
-    def forward(self, h_left, h_right):
+    def forward(self, h_left: torch.Tensor, h_right: torch.Tensor):
+        '''
+        h_left: N, C, H, W
+        h_right: N, C, H, W
+        '''
         # Output is (N, 1, n_query, n_classes)
         h = self.merge(h_left, h_right).squeeze(1)
         
@@ -163,11 +171,19 @@ class FishDETR(nn.Module):
     def forward(self, imgs: Tuple[torch.Tensor, torch.Tensor]):
         # (1, 100, 256)
         # (batchsize, n_queries, embedding_dim)
-        # imgs[0] and imgs[1] should be (N, C, H, W)
-        if self.freeze_encoder:
-            self.encoder.eval()
-        
+        # imgs[0] and imgs[1] should be (N, C, H, W)    
+        self.encoder.eval()
+
         h_left = self.encoder(imgs[0])
         h_right = self.encoder(imgs[1])
-        print(h_left)
+    
         return self.decoder(h_left, h_right)
+
+def get_random_input(N: int=1, device: Optional[torch.device]=None):
+    '''To test feedforward
+    N: N in (N,C,H,W)
+    '''
+    return (
+        torch.randn((N, 3, 800, 800), device=device),
+        torch.randn((N, 3, 800, 800), device=device)
+    )
