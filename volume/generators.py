@@ -22,9 +22,11 @@ from pprint import pprint
 from matplotlib import pyplot as plt 
 from matplotlib import patches
 
+
 def np_to_torch_img(img: np.ndarray):
     # np.ndarray[H, W, C] --> torch.Tensor[C,H,W]
     return torch.as_tensor(img, dtype=torch.float32).permute((2,0,1))
+
 
 class BlenderDatasetBase(Dataset, ABC):
     def __init__(self, 

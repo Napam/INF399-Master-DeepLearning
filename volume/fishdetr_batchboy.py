@@ -1,4 +1,4 @@
-from typing import Generic, Optional, Tuple
+from typing import Dict, Generic, Optional, Tuple
 
 import numpy as np
 from torchvision.models import resnet50
@@ -7,7 +7,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torchvision.transforms as T
 import utils
-from utils import debugt
+from utils import debug, debugs, debugt
     
 
 class Encoder(nn.Module):
@@ -44,9 +44,9 @@ class Encoder(nn.Module):
             check_hash=True
         )
     
-        self_state_dict = self.state_dict()
-        utils.dict_union_update(self_state_dict, state_dict)
-        self.load_state_dict(self_state_dict)
+        temp_state_dict = self.state_dict()
+        utils.dict_union_update(temp_state_dict, state_dict)
+        self.load_state_dict(temp_state_dict)
         print('Encoder successfully loaded with pretrained weights')
 
     def forward(self, inputs):
@@ -66,18 +66,20 @@ class Encoder(nn.Module):
 
         # construct positional encodings
         H, W = h.shape[-2:]
+        
         pos = torch.cat([
             self.col_embed[:W].unsqueeze(0).repeat(H, 1, 1),
             self.row_embed[:H].unsqueeze(1).repeat(1, W, 1),
         ], dim=-1).flatten(0, 1).unsqueeze(1)
 
-    
-        # propagate through the transformer
-        h = self.transformer(pos + 0.1 * h.flatten(2).permute(2, 0, 1),
-                             self.query_pos.unsqueeze(1)).transpose(0, 1)
-        # Now shape is (1, 100, 256)
+        src = pos + 0.1 * h.flatten(2).permute(2, 0, 1)
+        tgt = self.query_pos.unsqueeze(1)
         
-        # want to return (1, 1, 100, 256) to get "standard shape"
+        N = src.shape[1]
+        # propagate through the transformer
+        h = self.transformer(src, tgt.repeat(1,N,1)).transpose(0, 1)
+        # Now shape is (N, 100, 256)
+        # want to return (1, N, 100, 256) to get "standard shape"
         return h.unsqueeze(0)
     
     
@@ -107,7 +109,7 @@ class Decoder(nn.Module):
     
     def merge(self, h_left, h_right):
         # h_left and h_right: (N, 1, 100, 256)
-        h1 = torch.cat((h_left, h_right), dim=1) # 2 channel out
+        h1 = torch.cat((h_left, h_right), dim=0).permute((1,0,2,3)) # (batchsize, 2, 100, 256)
         
         h1 = self.merger1(h1) # 64 channel out
         h1 = F.relu(h1)
@@ -171,18 +173,41 @@ class FishDETR(nn.Module):
         # (1, 100, 256)
         # (batchsize, n_queries, embedding_dim)
         # imgs[0] and imgs[1] should be (N, C, H, W)    
-        self.encoder.eval()
+        assert isinstance(imgs, (tuple, list))
+        assert len(imgs) == 2
+
+        if self.freeze_encoder:
+            self.encoder.eval()
 
         h_left = self.encoder(imgs[0])
         h_right = self.encoder(imgs[1])
     
         return self.decoder(h_left, h_right)
 
-def get_random_input(N: int=1, device: Optional[torch.device]=None):
+
+def get_random_input(N: int=1, C: int=3, H: int=800, W: int=800, device: Optional[torch.device]=None):
     '''To test feedforward
     N: N in (N,C,H,W)
     '''
     return (
-        torch.randn((N, 3, 800, 800), device=device),
-        torch.randn((N, 3, 800, 800), device=device)
+        torch.randn((N, C, H, W), device=device),
+        torch.randn((N, C, H, W), device=device)
     )
+
+
+def collate(batch):
+    Xs, ys = tuple(zip(*batch))
+
+    Xs: Tuple[Tuple[torch.Tensor]]
+    ys: Tuple[Dict[str, torch.Tensor]]
+    
+    lefts = [None]*len(Xs)
+    rights = [None]*len(Xs)
+    for i, (left, right) in enumerate(Xs):
+        lefts[i] = left
+        rights[i] = right
+    
+    lefts = torch.cat(lefts)
+    rights = torch.cat(rights)
+        
+    return (lefts, rights), ys

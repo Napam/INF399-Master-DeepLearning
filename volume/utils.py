@@ -74,28 +74,72 @@ def dict_union_update(a: dict, b: dict):
         (key, b.get(key, a.get(key))) for key in a.keys() & b.keys()
     ))
 
-def debugt(tensor: Union[np.ndarray, torch.Tensor]):
+def _debug(obj: Any, fname: str, offset: int=0) -> str:
     '''
-    Stands for debug tensor
+    Tags and print Python object
 
-    If called in methods, relies on that self is called self
+    This is an inner function
     '''
     frames = inspect.stack()
     
     # frames[0] is current frame,
     # frames[1] is previous
     # frames[-1] is first frame
-    # remember stacks are lifo
+    # remember stacks are LIFO
+    # index 2 means 2+1 stack frames back
 
-    funcname = frames[1].function
-    lineno = frames[1].lineno
-    pre_code = frames[1].code_context[0]
-    arg = re.findall(r'debugt\((.*?)\)', pre_code)[0]
+    frame = frames[1 + offset]
+    funcname = frame.function
+    lineno = frame.lineno
+    pre_code = frame.code_context[0]
+    arg = re.findall(rf'{fname}\((.*)\)', pre_code)[0]
     
-    f_locals = frames[1].frame.f_locals
+    f_locals = frame.frame.f_locals
 
-    if "self" in f_locals:
+    tags = [lineno, funcname]
+    if "self" in f_locals: # Relies on convention
         classname = f_locals["self"].__class__.__name__
-        print(f'\033[32m({lineno}, {classname}.{funcname}) \033[0m{arg}: {tensor.shape}')
-    else:
-        print(f'\033[32m({lineno}, {funcname}) \033[0m{arg}: {tensor.shape}')
+        tags[1] = classname + "." + funcname
+
+    tags = f'\033[32m{tuple(tags)}\033[0m '.replace('\'', '')
+
+    return tags+f'{arg}: {obj}'
+
+
+def debug(obj: Any):
+    '''
+    Tag and print any Python object
+    '''
+    print(_debug(obj, 'debug', 1))
+
+
+def debugs(tensor: Any):
+    '''
+    Tag and print shape of thing that has .shape (torch tensors, ndarrays, tensorflow stuff, ...)
+    '''
+    print(_debug(tensor.shape, 'debugs', 1))
+
+
+def debugt(obj: Any):
+    '''
+    Tag and print type, if has __len__, print that too
+    '''
+    info = _debug(type(obj), 'debugt', 1)
+    try:
+        info += f", len: {len(obj)}"
+    except TypeError:
+        pass
+    print(info)
+            
+
+class NoError:
+    '''Suppresses exceptions'''
+    def __init__(self, exc=None):
+        self.exc = exc
+
+    def __enter__(self):
+        pass
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        debugt(self.exc_type)
+        return isinstance(exc_value, self.exc)
