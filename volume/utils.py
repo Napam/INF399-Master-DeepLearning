@@ -10,15 +10,16 @@ from functools import wraps
 import inspect
 import re
 
-def pytorch_init():
-    torch.cuda.set_device(1)
-    torch.cuda.current_device()
+def pytorch_init_janus_gpu():
+    device_id = 1
+    torch.cuda.set_device(device_id)
     
     # Sanity checks
     assert torch.cuda.current_device() == 1, 'Using wrong GPU'
     assert torch.cuda.device_count() == 2, 'Cannot find both GPUs'
-    assert torch.cuda.get_device_name(0) == 'GeForce RTX 2080 Ti'
-    assert torch.cuda.is_available() == True, 'GPU not available'  
+    assert torch.cuda.get_device_name(0) == 'GeForce RTX 2080 Ti', 'Unexpected GPU name'
+    assert torch.cuda.is_available() == True, 'GPU not available'
+    return torch.device('cuda', device_id)
 
 
 def seed_everything(seed):
@@ -131,15 +132,3 @@ def debugt(obj: Any):
         pass
     print(info)
             
-
-class NoError:
-    '''Suppresses exceptions'''
-    def __init__(self, exc=None):
-        self.exc = exc
-
-    def __enter__(self):
-        pass
-
-    def __exit__(self, exc_type, exc_value, traceback):
-        debugt(self.exc_type)
-        return isinstance(exc_value, self.exc)
