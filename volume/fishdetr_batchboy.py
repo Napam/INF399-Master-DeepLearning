@@ -17,7 +17,7 @@ class Encoder(nn.Module):
 
         # create ResNet-50 backbone
         self.backbone = resnet50()
-        del self.backbone.fc
+        # del self.backbone.fc
 
         # create conversion layer
         self.conv = nn.Conv2d(2048, hidden_dim, 1)
@@ -60,9 +60,12 @@ class Encoder(nn.Module):
         x = self.backbone.layer2(x)
         x = self.backbone.layer3(x)
         x = self.backbone.layer4(x)
+        
 
         # convert from 2048 to 256 feature planes for the transformer
         h = self.conv(x)
+
+        return h
 
         # construct positional encodings
         H, W = h.shape[-2:]
@@ -79,8 +82,8 @@ class Encoder(nn.Module):
         # propagate through the transformer
         h = self.transformer(src, tgt.repeat(1,N,1)).transpose(0, 1)
         # Now shape is (N, 100, 256)
-        # want to return (1, N, 100, 256) to get "standard shape"
-        return h.unsqueeze(0)
+        # want to return (N, 1, 100, 256) to get "standard shape" for convolution purposes
+        return h.unsqueeze(1)
     
     
 class Decoder(nn.Module):
@@ -109,12 +112,12 @@ class Decoder(nn.Module):
     
     def merge(self, h_left, h_right):
         # h_left and h_right: (N, 1, 100, 256)
-        h1 = torch.cat((h_left, h_right), dim=0).permute((1,0,2,3)) # (batchsize, 2, 100, 256)
+        h1 = torch.cat((h_left, h_right), dim=1) # (N, 2, 100, 256)
         
         h1 = self.merger1(h1) # 64 channel out
         h1 = F.relu(h1)
         h2 = self.merger2(h1) # 64 channel out
-        h2 = F.relu(h1+h2)  # Skip connection
+        h2 = F.relu(h1+h2)    # Skip connection
         h2 = self.merger3(h2) # 1 channel out
         h2 = F.relu(h2)
         
