@@ -75,11 +75,11 @@ def dict_union_update(a: dict, b: dict):
         (key, b.get(key, a.get(key))) for key in a.keys() & b.keys()
     ))
 
-def _debug(obj: Any, fname: str, offset: int=0) -> str:
+def _tag(obj: Any, fname: str, offset: int=0) -> str:
     '''
-    Tags and print Python object
-
-    This is an inner function
+    Obtain tag: (linenumber, function)
+    fname: funcname
+    offset: stack offset, stack frame index is 1 by default (prev stack)
     '''
     frames = inspect.stack()
     
@@ -104,28 +104,37 @@ def _debug(obj: Any, fname: str, offset: int=0) -> str:
 
     tags = f'\033[32m{tuple(tags)}\033[0m '.replace('\'', '')
 
-    return tags+f'{arg}: {obj}'
+    return tags+f'{arg}'
 
 
 def debug(obj: Any):
     '''
     Tag and print any Python object
     '''
-    print(_debug(obj, 'debug', 1))
+    tag = _tag(obj, 'debug', 1)
+    strobj = str(obj)
+    if '\n' in strobj:
+        # so __str__ representation dont get wrecked if it 
+        # spans multiple lines
+        strobj = '\n' + strobj
+        strobj = strobj.replace('\n', '\n\t')
+    print(f'{tag}: {strobj}')
 
 
 def debugs(tensor: Any):
     '''
-    Tag and print shape of thing that has .shape (torch tensors, ndarrays, tensorflow stuff, ...)
+    Tag and print shape of thing that has .shape (torch tensors, ndarrays, tensorflow tensors, ...)
     '''
-    print(_debug(tensor.shape, 'debugs', 1))
+    tag = _tag(tensor.shape, 'debugs', 1)
+    print(f'{tag}: {str(tensor.shape)}')
 
 
 def debugt(obj: Any):
     '''
     Tag and print type, if has __len__, print that too
     '''
-    info = _debug(type(obj), 'debugt', 1)
+    tag = _tag(type(obj), 'debugt', 1)
+    info = f'{tag}: {type(obj)}'
     try:
         info += f", len: {len(obj)}"
     except TypeError:
