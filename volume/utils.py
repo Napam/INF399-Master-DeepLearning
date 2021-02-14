@@ -108,9 +108,9 @@ def _tag(obj: Any, fname: str, offset: int = 0) -> str:
         classname = f_locals["self"].__class__.__name__
         tags[1] = classname + "." + funcname
 
-    tags = f"\033[32m{tuple(tags)}\033[0m ".replace("'", "")
+    tags = f"\033[32;2m{tuple(tags)}\033[0m ".replace("'", "")
 
-    return tags + f"\033[2m{arg}\033[0m"
+    return tags + f"\033[2m{arg}:\033[0m"
 
 
 def debug(obj: Any, pretty: bool = False, *args, **kwargs):
@@ -124,7 +124,7 @@ def debug(obj: Any, pretty: bool = False, *args, **kwargs):
         # spans multiple lines
         strobj = "\n" + strobj
         strobj = strobj.replace("\n", "\n\t")
-    print(f"{tag}: ", end="")
+    print(f"{tag} ", end="")
     if pretty:
         with io.StringIO() as f:
             pprint(obj, stream=f)
@@ -139,7 +139,7 @@ def debugs(tensor: Any):
     Tag and print shape of thing that has .shape (torch tensors, ndarrays, tensorflow tensors, ...)
     """
     tag = _tag(tensor.shape, "debugs", 1)
-    print(f"{tag}: {str(tensor.shape)}")
+    print(f"{tag} {str(tensor.shape)}")
 
 
 def debugt(obj: Any):
@@ -147,7 +147,7 @@ def debugt(obj: Any):
     Tag and print type, if has __len__, print that too
     """
     tag = _tag(type(obj), "debugt", 1)
-    info = f"{tag}: {type(obj)}"
+    info = f"{tag} {type(obj)}"
     try:
         info += f", len: {len(obj)}"
     except TypeError:

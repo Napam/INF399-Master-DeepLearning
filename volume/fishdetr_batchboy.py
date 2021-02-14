@@ -1,6 +1,7 @@
 from typing import Dict, Generic, Iterable, List, Optional, Tuple
 
 import numpy as np
+from torch.nn.modules.activation import ReLU
 from torchvision.models import resnet50
 import torch
 import torch.nn as nn
@@ -23,7 +24,7 @@ class Encoder(nn.Module):
 
         # create ResNet-50 backbone
         self.backbone = resnet50()
-        # del self.backbone.fc
+        del self.backbone.fc
 
         # create conversion layer
         self.conv = nn.Conv2d(2048, hidden_dim, 1)
@@ -97,6 +98,28 @@ class Encoder(nn.Module):
         return h.unsqueeze(1)
 
 
+class DecoderBlock(nn.Module):
+    def __init__(self, in_channels: int, hidden_channels: int, out_channels: int):
+        super().__init__()
+        # common kwargs
+        kwargs = {"kernel_size": 1, "stride": 1}
+        self.conv1 = nn.Conv2d(in_channels=in_channels, out_channels=hidden_channels, **kwargs)
+        self.bn1 = nn.BatchNorm2d(num_features=hidden_channels)
+        self.conv2 = nn.Conv2d(
+            in_channels=hidden_channels, out_channels=hidden_channels, kernel_size=3, padding=1
+        )
+        self.bn2 = nn.BatchNorm2d(num_features=hidden_channels)
+        self.conv3 = nn.Conv2d(in_channels=hidden_channels, out_channels=out_channels, **kwargs)
+        self.bn3 = nn.BatchNorm2d(num_features=out_channels)
+        self.relu = nn.ReLU(inplace=True)
+
+    def forward(self, h: torch.Tensor):
+        h1 = self.bn1(self.relu(self.conv1(h)))
+        h2 = self.bn2(self.relu(self.conv2(h1)))
+        h3 = self.bn3(self.relu(self.conv3(h2 + h1)))
+        return h3
+
+
 class Decoder(nn.Module):
     def __init__(self, num_classes, hidden_dim: int = 256, merge_hidden_dim: int = 64):
         """
@@ -104,53 +127,73 @@ class Decoder(nn.Module):
         """
         super().__init__()
 
-        # common kwargs
-        kwargs = {"kernel_size": 1, "stride": 1}
-
-        # For latent space merging, use 1x1 convs
-        self.merger1 = nn.Conv2d(in_channels=2, out_channels=merge_hidden_dim, **kwargs)
-        self.merger2 = nn.Conv2d(
-            in_channels=merge_hidden_dim, out_channels=merge_hidden_dim, **kwargs
+        self.block1 = DecoderBlock(
+            in_channels=2, hidden_channels=merge_hidden_dim, out_channels=merge_hidden_dim
         )
-        self.merger3 = nn.Conv2d(in_channels=merge_hidden_dim, out_channels=1, **kwargs)
+        self.block2 = DecoderBlock(
+            in_channels=merge_hidden_dim,
+            hidden_channels=merge_hidden_dim,
+            out_channels=merge_hidden_dim,
+        )
+        self.block3 = DecoderBlock(
+            in_channels=merge_hidden_dim,
+            hidden_channels=merge_hidden_dim,
+            out_channels=merge_hidden_dim,
+        )
+        self.block4 = DecoderBlock(
+            in_channels=merge_hidden_dim, hidden_channels=merge_hidden_dim, out_channels=2
+        )
 
         self.linear_pre_class = nn.Linear(in_features=hidden_dim, out_features=hidden_dim)
         self.linear_pre_bbox = nn.Linear(in_features=hidden_dim, out_features=hidden_dim)
 
+        self.linear_class = nn.Sequential(
+            nn.Linear(in_features=hidden_dim, out_features=hidden_dim * 2),
+            nn.ReLU(inplace=True),
+            nn.Linear(in_features=hidden_dim * 2, out_features=hidden_dim * 2),
+            nn.ReLU(inplace=True),
+            nn.Linear(in_features=hidden_dim * 2, out_features=num_classes + 1),
+        )
+
+        self.linear_bbox = nn.Sequential(
+            nn.Linear(in_features=hidden_dim, out_features=hidden_dim * 2),
+            nn.ReLU(inplace=True),
+            nn.Linear(in_features=hidden_dim * 2, out_features=hidden_dim * 2),
+            nn.ReLU(inplace=True),
+            nn.Linear(in_features=hidden_dim * 2, out_features=4),
+            nn.Sigmoid()
+        )
+
         # prediction heads, one extra class for predicting non-empty slots
         # note that in baseline DETR linear_bbox layer is 3-layer MLP
-        self.linear_class = nn.Linear(hidden_dim, num_classes + 1)
-        self.linear_bbox = nn.Linear(hidden_dim, 4)
+        # self.linear_class = nn.Linear(hidden_dim, num_classes + 1)
+        # self.linear_bbox = nn.Linear(hidden_dim, 4)
 
     def merge(self, h_left, h_right):
         # h_left and h_right: (N, 1, 100, 256)
-        h1 = torch.cat((h_left, h_right), dim=1)  # (N, 2, 100, 256)
+        h = torch.cat((h_left, h_right), dim=1)  # (N, 2, 100, 256)
 
-        h1 = self.merger1(h1)  # 64 channel out
-        h1 = F.relu(h1)
-        h2 = self.merger2(h1)  # 64 channel out
-        h2 = F.relu(h1 + h2)  # Skip connection
-        h2 = self.merger3(h2)  # 1 channel out
-        h2 = F.relu(h2)
+        h = self.block1(h)
+        h = self.block2(h)
+        h = self.block3(h)
+        h = self.block4(h)
 
-        # (N, 1, 100, 256)
-        return h2
+        # (N, 2, 100, 256)
+        return h
 
     def forward(self, h_left: torch.Tensor, h_right: torch.Tensor):
         """
         h_left: N, C, H, W
         h_right: N, C, H, W
         """
-        # Output is (N, 1, n_query, n_classes)
+        # Output is (N, 2, n_query, n_classes)
         h = self.merge(h_left, h_right).squeeze(1)
-
-        h_logits = F.relu(self.linear_pre_class(h))
-        h_boxes = F.relu(self.linear_pre_bbox(h))
 
         # finally project transformer outputs to class labels and bounding boxes
         return {
-            "pred_logits": self.linear_class(h_logits),
-            "pred_boxes": self.linear_bbox(h_boxes).sigmoid(),
+            # Each channel for logits and boxes
+            "pred_logits": self.linear_class(h[:,0,:,:]),
+            "pred_boxes": self.linear_bbox(h[:,1,:,:]),
         }
 
 
@@ -225,7 +268,7 @@ def label_handler(labels: Iterable, device: Optional[torch.device] = None) -> Li
 
 def get_random_input(
     N: int = 1, C: int = 3, H: int = 800, W: int = 800, device: Optional[torch.device] = None
-):
+) -> Tuple[torch.Tensor, torch.Tensor]:
     """To test feedforward
     N: N in (N,C,H,W)
     """
@@ -233,7 +276,7 @@ def get_random_input(
 
 
 def collate(batch):
-    Xs, ys = tuple(zip(*batch))
+    Xs, ys = zip(*batch)
 
     Xs: Tuple[Tuple[torch.Tensor]]
     ys: Tuple[Dict[str, torch.Tensor]]
@@ -246,5 +289,11 @@ def collate(batch):
 
     lefts = torch.cat(lefts)
     rights = torch.cat(rights)
+    return [lefts, rights], ys
 
-    return (lefts, rights), ys
+
+if __name__ == "__main__":
+    torch.hub.set_dir("./torch_cache/")
+    model = FishDETR()
+    X = get_random_input(2)
+    model(X)
