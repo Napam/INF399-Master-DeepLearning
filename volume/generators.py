@@ -43,6 +43,8 @@ class BlenderDatasetBase(Dataset, ABC):
         '''
         data_dir: str, path to blender generated_data directory
         table: str, name of sqlite3 table
+        imgnrs: Iterable of indices, used to specify which images should be visible for the 
+                generator
         '''
         self.con = db.connect(f'file:{os.path.join(data_dir,"bboxes.db")}?mode=ro', uri=True)
         self.c = self.con.cursor()

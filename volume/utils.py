@@ -1,5 +1,6 @@
-from typing import Any, Callable, Union
+from typing import Any, Callable, Set, Union
 import torch
+from torch import nn
 import importlib
 from types import ModuleType
 import random
@@ -81,7 +82,16 @@ def dict_union_update(a: dict, b: dict):
     a.update(((key, b.get(key, a.get(key))) for key in a.keys() & b.keys()))  # Set union
 
 
-def _tag(obj: Any, fname: str, offset: int = 0) -> str:
+def get_unique_modules(model: nn.Module) -> Set[str]:
+    '''
+    Goes through all module and its submodules and retrieves all unique types of modules
+    '''
+    names = set()
+    model.apply(lambda x: names.add(x.__class__.__name__))
+    return names 
+
+
+def _tag(fname: str, offset: int = 0) -> str:
     """
     Obtain tag: (linenumber, function)
     fname: funcname
@@ -117,7 +127,7 @@ def debug(obj: Any, pretty: bool = False, *args, **kwargs):
     """
     Tag and print any Python object
     """
-    tag = _tag(obj, "debug", 1)
+    tag = _tag("debug", 1)
     strobj = str(obj)
     if "\n" in strobj:
         # so __str__ representation dont get wrecked if it
@@ -138,7 +148,7 @@ def debugs(tensor: Any):
     """
     Tag and print shape of thing that has .shape (torch tensors, ndarrays, tensorflow tensors, ...)
     """
-    tag = _tag(tensor.shape, "debugs", 1)
+    tag = _tag("debugs", 1)
     print(f"{tag} {str(tensor.shape)}")
 
 
@@ -146,7 +156,7 @@ def debugt(obj: Any):
     """
     Tag and print type, if has __len__, print that too
     """
-    tag = _tag(type(obj), "debugt", 1)
+    tag = _tag("debugt", 1)
     info = f"{tag} {type(obj)}"
     try:
         info += f", len: {len(obj)}"

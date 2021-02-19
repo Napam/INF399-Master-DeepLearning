@@ -2,6 +2,7 @@ from typing import Dict, Generic, Iterable, List, Optional, Tuple
 
 import numpy as np
 from torch.nn.modules.activation import ReLU
+from torch.types import Number
 from torchvision.models import resnet50
 import torch
 import torch.nn as nn
@@ -103,14 +104,35 @@ class DecoderBlock(nn.Module):
         super().__init__()
         # common kwargs
         kwargs = {"kernel_size": 1, "stride": 1}
-        self.conv1 = nn.Conv2d(in_channels=in_channels, out_channels=hidden_channels, **kwargs)
+
+        # No bias needed since batch norm
+        self.conv1 = nn.Conv2d(
+            in_channels=in_channels,
+            out_channels=hidden_channels,
+            kernel_size=1,
+            padding=0,
+            bias=False,
+        )
         self.bn1 = nn.BatchNorm2d(num_features=hidden_channels)
+
         self.conv2 = nn.Conv2d(
-            in_channels=hidden_channels, out_channels=hidden_channels, kernel_size=3, padding=1
+            in_channels=hidden_channels,
+            out_channels=hidden_channels,
+            kernel_size=3,
+            padding=1,
+            bias=False,
         )
         self.bn2 = nn.BatchNorm2d(num_features=hidden_channels)
-        self.conv3 = nn.Conv2d(in_channels=hidden_channels, out_channels=out_channels, **kwargs)
+
+        self.conv3 = nn.Conv2d(
+            in_channels=hidden_channels,
+            out_channels=out_channels,
+            kernel_size=1,
+            padding=0,
+            bias=False,
+        )
         self.bn3 = nn.BatchNorm2d(num_features=out_channels)
+
         self.relu = nn.ReLU(inplace=True)
 
     def forward(self, h: torch.Tensor):
@@ -161,7 +183,7 @@ class Decoder(nn.Module):
             nn.Linear(in_features=hidden_dim * 2, out_features=hidden_dim * 2),
             nn.ReLU(inplace=True),
             nn.Linear(in_features=hidden_dim * 2, out_features=4),
-            nn.Sigmoid()
+            nn.Sigmoid(),
         )
 
         # prediction heads, one extra class for predicting non-empty slots
@@ -192,8 +214,8 @@ class Decoder(nn.Module):
         # finally project transformer outputs to class labels and bounding boxes
         return {
             # Each channel for logits and boxes
-            "pred_logits": self.linear_class(h[:,0,:,:]),
-            "pred_boxes": self.linear_bbox(h[:,1,:,:]),
+            "pred_logits": self.linear_class(h[:, 0, :, :]),
+            "pred_boxes": self.linear_bbox(h[:, 1, :, :]),
         }
 
 
@@ -245,6 +267,63 @@ class FishDETR(nn.Module):
 
         return self.decoder(h_left, h_right)
 
+    def train_on_batch(
+        self,
+        X: Tuple[torch.Tensor, torch.Tensor],
+        y: torch.Tensor,
+        criterion: nn.Module,
+        optimizer: torch.optim.Optimizer,
+        enforce_train: bool = False,
+    ):
+        """
+        Train model on given batch of samples
+
+        Will:
+            1. forward pass
+            2. calc loss
+            3. zero gradient accumulation
+            4. calc gradients
+            5. update weights
+
+        criterion: SetCriterion
+        optimizer: torch.optim.Optimizer
+
+        returns loss (float)
+        """
+        if enforce_train:
+            self.train()
+            criterion.train()
+
+        output = self(X)
+        loss_dict = criterion(output, y)
+        weight_dict = criterion.weight_dict
+        losses: torch.Tensor
+        losses = sum(loss_dict[k] * weight_dict[k] for k in loss_dict.keys() if k in weight_dict)
+
+        optimizer.zero_grad()
+        losses.backward()  # Computes gradients
+        optimizer.step()  # Do a gradient step
+        return output, losses
+
+    @torch.no_grad()
+    def eval_on_batch(
+        self,
+        X: Tuple[torch.Tensor, torch.Tensor],
+        y: torch.Tensor,
+        criterion: nn.Module,
+        enforce_eval: bool = False,
+    ):
+        if enforce_eval:
+            self.eval()
+            criterion.eval()
+
+        output = self(X)
+        loss_dict = criterion(output, y)
+        weight_dict = criterion.weight_dict
+        losses: torch.Tensor
+        losses = sum(loss_dict[k] * weight_dict[k] for k in loss_dict.keys() if k in weight_dict)
+        return output, losses
+
 
 def postprocess(logits: torch.Tensor, boxes: torch.Tensor, thresh: float = 0.2):
     keepmask = logits.softmax(-1)[:, :-1].max(-1)[0] > thresh
@@ -254,12 +333,12 @@ def postprocess(logits: torch.Tensor, boxes: torch.Tensor, thresh: float = 0.2):
 
 
 def img_handler(
-    images: List[Tuple[torch.Tensor, torch.Tensor]], device: Optional[torch.device] = None
+    images: Tuple[torch.Tensor, torch.Tensor], device: Optional[torch.device] = None
 ) -> List[tuple]:
-    # pp for pre process
-    trans = T.Compose([T.Resize(800), T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])])
-    # trans = T.Compose([T.Resize(800), T.Normalize([0.648, 0.752, 0.439], [0.068, 0.077, 0.059])])
-    return [(trans(pair[0]).to(device), trans(pair[1]).to(device)) for pair in images]
+    '''
+    Each tensor in Tuple[torch.Tensor, torch.Tensor] is (N,C,H,W)
+    '''
+    return (images[0].to(device), images[1].to(device))
 
 
 def label_handler(labels: Iterable, device: Optional[torch.device] = None) -> List[dict]:
@@ -295,5 +374,9 @@ def collate(batch):
 if __name__ == "__main__":
     torch.hub.set_dir("./torch_cache/")
     model = FishDETR()
-    X = get_random_input(2)
-    model(X)
+    # X = get_random_input(2)
+    # model(X)
+    lol = set()
+    model.apply(lambda x: lol.add(x.__class__.__name__))
+    debug(lol)
+    model.half()
