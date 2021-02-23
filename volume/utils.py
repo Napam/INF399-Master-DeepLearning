@@ -1,4 +1,4 @@
-from typing import Any, Callable, Set, Union
+from typing import Any, Callable, Dict, Iterable, Mapping, Optional, Sequence, Set, Union
 import torch
 from torch import nn
 import importlib
@@ -12,6 +12,10 @@ import inspect
 import re
 from pprint import pprint
 import io
+from matplotlib import pyplot as plt
+from numpy.typing import ArrayLike
+from torch.types import Number
+from matplotlib.axes import Axes
 
 
 def pytorch_init_janus_gpu():
@@ -83,12 +87,124 @@ def dict_union_update(a: dict, b: dict):
 
 
 def get_unique_modules(model: nn.Module) -> Set[str]:
-    '''
+    """
     Goes through all module and its submodules and retrieves all unique types of modules
-    '''
+    """
     names = set()
     model.apply(lambda x: names.add(x.__class__.__name__))
-    return names 
+    return names
+
+
+def box_cxcywh_to_xyxy(x: torch.Tensor):
+    """
+    Change bounding box format:
+
+          w                 w
+      ---------         x--------
+      |       |         |       |
+    h |   x   |  -->  h |       |
+      |       |         |       |
+      ---------         ---------
+    """
+    x_c, y_c, w, h = x.unbind(1)
+    b = [(x_c - 0.5 * w), (y_c - 0.5 * h), (x_c + 0.5 * w), (y_c + 0.5 * h)]
+    return torch.stack(b, dim=1)
+
+
+def box_cxcywh_to_xywh(x: torch.Tensor):
+    """
+    Change bounding box format:
+
+          w                 w    
+      ---------         x--------
+      |       |         |       |
+    h |   x   |  -->  h |       |
+      |       |         |       |
+      ---------         ---------
+    """
+    x_c, y_c, w, h = x.unbind(1)
+    b = [(x_c - 0.5 * w), (y_c - 0.5 * h), w, h]
+    return torch.stack(b, dim=1)
+
+
+def plot_bboxes(
+    img: ArrayLike,
+    classes: Iterable,
+    boxes: Iterable,
+    classmap: Optional[Mapping[int, str]] = None,
+    ax: Optional[Axes] = None,
+    figsize: Optional[Sequence[float]] = None,
+    rkwargs: Optional[Dict[str, Any]] = None,
+    tkwargs: Optional[Dict[str, Any]] = None,
+) -> Axes:
+    """Used to plot result of 2D object detection
+
+    Parameters
+    ----------
+    img : ArrayLike
+        image
+    classes : Iterable
+        Iterable of classes
+    boxes : Iterable
+        Iterable of bounding boxes in xywh style (top left corner, and w and height):
+              w    
+          ---------
+          |       |
+        h |   x   |
+          |       |
+          ---------
+    classmap : Optional[Mapping[int, str]], optional
+        mapping of integer class to string class, by default None
+    ax : Optional[Any], optional
+        plt axes, by default None
+    figsize : Optional[Tuple[float, float]], optional
+        by default None
+    rkwargs : Optional[Dict[str, Any]], optional
+        rectangle kwargs (the bounding box), by default None
+    tkwargs : Optional[Dict[str, Any]], optional
+        text kwargs (the text label), by default None
+
+    Returns
+    -------
+    ax: Axes
+    """
+    if figsize is None:
+        figsize = (5, 5)
+
+    rectkwargs = {"fill": False, "color": "cyan", "linewidth": 3}
+    if rkwargs is not None:
+        rectkwargs.update(rkwargs)
+
+    textkwargs = {"fontsize": 11, "bbox": {"facecolor": "cyan", "alpha": 0.9}}
+    if tkwargs is not None:
+        textkwargs.update(tkwargs)
+
+    if ax is None:
+        fig, ax = plt.subplots(figsize=figsize)
+
+    img = np.array(img)
+    ax.imshow(img.clip(0, 1))
+
+    if len(boxes) != 0:
+        h, w = img.shape[:2]
+        boxes = box_cxcywh_to_xywh(boxes)
+        boxes[:, [0, 2]] *= w
+        boxes[:, [1, 3]] *= h
+
+        for cls, (xmin, ymin, bw, bh) in zip(classes, boxes):
+            ax.add_patch(plt.Rectangle((xmin, ymin), bw, bh, **rectkwargs))
+            try:
+                strcls = classmap[int(cls)]
+            except:
+                strcls = str(int(cls))
+
+            ax.text(xmin, ymin, strcls, **textkwargs)
+
+    if ax is None:
+        ax.axis("off")
+        plt.show()
+
+    return ax
 
 
 def _tag(fname: str, offset: int = 0) -> str:
@@ -123,7 +239,7 @@ def _tag(fname: str, offset: int = 0) -> str:
     return tags + f"\033[2m{arg}:\033[0m"
 
 
-def debug(obj: Any, pretty: bool = False, *args, **kwargs):
+def debug(obj: Any, pretty: bool = False):
     """
     Tag and print any Python object
     """
@@ -139,7 +255,7 @@ def debug(obj: Any, pretty: bool = False, *args, **kwargs):
         with io.StringIO() as f:
             pprint(obj, stream=f)
             f.seek(0)
-            print(("\n"+f.read()).replace("\n", "\n\t").rstrip())
+            print(("\n" + f.read()).replace("\n", "\n\t").rstrip())
     else:
         print(strobj)
 

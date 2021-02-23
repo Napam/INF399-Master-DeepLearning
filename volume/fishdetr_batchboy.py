@@ -1,8 +1,7 @@
-from typing import Dict, Generic, Iterable, List, Optional, Tuple
+from typing import Dict, Iterable, List, Optional, Tuple
 
 import numpy as np
-from torch.nn.modules.activation import ReLU
-from torch.types import Number
+from numpy.typing import ArrayLike
 from torchvision.models import resnet50
 import torch
 import torch.nn as nn
@@ -10,6 +9,10 @@ import torch.nn.functional as F
 import torchvision.transforms as T
 import utils
 from utils import debug, debugs, debugt
+from matplotlib import pyplot as plt
+
+StereoImgs = Tuple[torch.Tensor, torch.Tensor]
+DETROutput = Dict[str, torch.Tensor]
 
 
 class Encoder(nn.Module):
@@ -253,14 +256,9 @@ class FishDETR(nn.Module):
             param.requires_grad = False
 
     def forward(self, imgs: Tuple[torch.Tensor, torch.Tensor]):
-        # (1, 100, 256)
-        # (batchsize, n_queries, embedding_dim)
         # imgs[0] and imgs[1] should be (N, C, H, W)
         assert isinstance(imgs, (tuple, list))
         assert len(imgs) == 2
-
-        if self.freeze_encoder:
-            self.encoder.eval()
 
         h_left = self.encoder(imgs[0])
         h_right = self.encoder(imgs[1])
@@ -269,12 +267,12 @@ class FishDETR(nn.Module):
 
     def train_on_batch(
         self,
-        X: Tuple[torch.Tensor, torch.Tensor],
+        X: StereoImgs,
         y: torch.Tensor,
         criterion: nn.Module,
         optimizer: torch.optim.Optimizer,
         enforce_train: bool = False,
-    ):
+    ) -> Tuple[DETROutput, float]:
         """
         Train model on given batch of samples
 
@@ -308,11 +306,11 @@ class FishDETR(nn.Module):
     @torch.no_grad()
     def eval_on_batch(
         self,
-        X: Tuple[torch.Tensor, torch.Tensor],
+        X: StereoImgs,
         y: torch.Tensor,
         criterion: nn.Module,
         enforce_eval: bool = False,
-    ):
+    ) -> Tuple[DETROutput, float]:
         if enforce_eval:
             self.eval()
             criterion.eval()
@@ -324,30 +322,77 @@ class FishDETR(nn.Module):
         losses = sum(loss_dict[k] * weight_dict[k] for k in loss_dict.keys() if k in weight_dict)
         return output, losses
 
+    @torch.no_grad()
+    def forward_and_plot(
+        self,
+        X: StereoImgs,
+        y: Optional[DETROutput] = None,
+        output: Optional[DETROutput] = None,
+        alt_imgs: Optional[ArrayLike] = None,
+        **kwargs
+    ) -> None:
 
-def postprocess(logits: torch.Tensor, boxes: torch.Tensor, thresh: float = 0.2):
+        self.eval()
+        if output is None:
+            output = self(X)
+
+        # inp consists of left images
+        if alt_imgs is None:
+            # (N,C,H,W) -> (N,H,W,C) -> cpu
+            imgs = X[0].permute((0, 2, 3, 1)).cpu()
+        else:
+            imgs = alt_imgs
+
+        if y is not None:
+            fig, (ax_left, ax_right) = plt.subplots(1, 2, figsize=kwargs.get("figsize", None))
+            plot_output(imgs, output, ax=ax_left, **kwargs)
+            plot_labels(imgs, y, ax=ax_right, **kwargs)
+        else:
+            plot_output(imgs, output, **kwargs)
+
+
+def postprocess(
+    output: DETROutput, thresh: float = 0.2
+) -> Tuple[List[torch.Tensor], List[torch.Tensor]]:
+    logitss = output["pred_logits"]
+    boxess = output["pred_boxes"]
+
+    classes_list = []
+    boxes_list = []
+    for logits, boxes in zip(logitss, boxess):
+        class_preds, box_preds = postprocess_sample(logits, boxes, thresh)
+        classes_list.append(class_preds)
+        boxes_list.append(box_preds)
+    return classes_list, boxes_list
+
+
+def postprocess_sample(
+    logits: torch.Tensor, boxes: torch.Tensor, thresh: float
+) -> Tuple[torch.Tensor, torch.Tensor]:
     keepmask = logits.softmax(-1)[:, :-1].max(-1)[0] > thresh
     if any(keepmask) == False:
         return torch.Tensor(), torch.Tensor()
     return logits[keepmask].argmax(-1), boxes[keepmask]
 
 
-def img_handler(
-    images: Tuple[torch.Tensor, torch.Tensor], device: Optional[torch.device] = None
-) -> List[tuple]:
-    '''
-    Each tensor in Tuple[torch.Tensor, torch.Tensor] is (N,C,H,W)
-    '''
+def preprocess(X: StereoImgs, y: DETROutput, device: torch.device) -> Tuple[StereoImgs, DETROutput]:
+    return preprocess_images(X, device), preprocess_labels(y, device)
+
+
+def preprocess_images(images: StereoImgs, device: Optional[torch.device] = None) -> List[tuple]:
+    """
+    Each tensor in StereoImgs is (N,C,H,W)
+    """
     return (images[0].to(device), images[1].to(device))
 
 
-def label_handler(labels: Iterable, device: Optional[torch.device] = None) -> List[dict]:
+def preprocess_labels(labels: Iterable, device: Optional[torch.device] = None) -> List[dict]:
     return [{k: v.to(device) for k, v in t.items()} for t in labels]
 
 
 def get_random_input(
-    N: int = 1, C: int = 3, H: int = 800, W: int = 800, device: Optional[torch.device] = None
-) -> Tuple[torch.Tensor, torch.Tensor]:
+    N: int = 1, C: int = 3, H: int = 416, W: int = 416, device: Optional[torch.device] = None
+) -> StereoImgs:
     """To test feedforward
     N: N in (N,C,H,W)
     """
@@ -358,7 +403,7 @@ def collate(batch):
     Xs, ys = zip(*batch)
 
     Xs: Tuple[Tuple[torch.Tensor]]
-    ys: Tuple[Dict[str, torch.Tensor]]
+    ys: Tuple[DETROutput]
 
     lefts = [None] * len(Xs)
     rights = [None] * len(Xs)
@@ -371,12 +416,45 @@ def collate(batch):
     return [lefts, rights], ys
 
 
+@torch.no_grad()
+def plot_output(imgs: ArrayLike, output: DETROutput, enforce_cpu: bool = True, **kwargs):
+    """
+    imgs: batch of imgs
+    """
+    if enforce_cpu:
+        try:
+            imgs = imgs.cpu()
+        except AttributeError:
+            pass
+
+        output = {
+            "pred_logits": output["pred_logits"].cpu(),
+            "pred_boxes": output["pred_boxes"].cpu(),
+        }
+
+    class_predss, box_predss = postprocess(output)
+    for img, class_preds, box_preds in zip(imgs, class_predss, box_predss):
+        utils.plot_bboxes(img=img, classes=class_preds, boxes=box_preds, **kwargs)
+
+
+def plot_labels(imgs: ArrayLike, labels: List[DETROutput], enforce_cpu: bool = True, **kwargs):
+    for img, dict_ in zip(imgs, labels):
+        if enforce_cpu:
+            boxes = dict_["boxes"].cpu()
+            classes = dict_["labels"].cpu()
+        utils.plot_bboxes(img=img, classes=classes, boxes=boxes, **kwargs)
+
+
 if __name__ == "__main__":
     torch.hub.set_dir("./torch_cache/")
     model = FishDETR()
-    # X = get_random_input(2)
-    # model(X)
-    lol = set()
-    model.apply(lambda x: lol.add(x.__class__.__name__))
-    debug(lol)
-    model.half()
+    X = get_random_input(4)
+
+    with torch.no_grad():
+        output = model(X)
+        cls, bx = postprocess(output, 0.15)
+
+    # lol = set()
+    # model.apply(lambda x: lol.add(x.__class__.__name__))
+    # debug(lol)
+    # model.half()
