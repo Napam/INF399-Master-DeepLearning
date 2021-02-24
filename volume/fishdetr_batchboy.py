@@ -141,7 +141,7 @@ class DecoderBlock(nn.Module):
     def forward(self, h: torch.Tensor):
         h1 = self.bn1(self.relu(self.conv1(h)))
         h2 = self.bn2(self.relu(self.conv2(h1)))
-        h3 = self.bn3(self.relu(self.conv3(h2 + h1)))
+        h3 = self.bn3(self.relu(self.conv3(h2 + h1)))  # Skip connection
         return h3
 
 
@@ -168,9 +168,6 @@ class Decoder(nn.Module):
         self.block4 = DecoderBlock(
             in_channels=merge_hidden_dim, hidden_channels=merge_hidden_dim, out_channels=2
         )
-
-        self.linear_pre_class = nn.Linear(in_features=hidden_dim, out_features=hidden_dim)
-        self.linear_pre_bbox = nn.Linear(in_features=hidden_dim, out_features=hidden_dim)
 
         self.linear_class = nn.Sequential(
             nn.Linear(in_features=hidden_dim, out_features=hidden_dim * 2),
@@ -261,7 +258,8 @@ class FishDETR(nn.Module):
         assert len(imgs) == 2
 
         h_left = self.encoder(imgs[0])
-        h_right = self.encoder(imgs[1])
+        h_right = h_left
+        # h_right = self.encoder(imgs[1])
 
         return self.decoder(h_left, h_right)
 
@@ -272,7 +270,7 @@ class FishDETR(nn.Module):
         criterion: nn.Module,
         optimizer: torch.optim.Optimizer,
         enforce_train: bool = False,
-    ) -> Tuple[DETROutput, float]:
+    ) -> Tuple[DETROutput, torch.Tensor]:
         """
         Train model on given batch of samples
 
@@ -329,6 +327,7 @@ class FishDETR(nn.Module):
         y: Optional[DETROutput] = None,
         output: Optional[DETROutput] = None,
         alt_imgs: Optional[ArrayLike] = None,
+        thresh: float = 0.2,
         **kwargs
     ) -> None:
 
@@ -348,8 +347,8 @@ class FishDETR(nn.Module):
                 fig, (ax_left, ax_right) = plt.subplots(1, 2, figsize=kwargs.get("figsize", None))
                 # Dummy stuff
                 output_ = {"pred_logits": logits[None], "pred_boxes": boxes[None]}
-                plot_output(img[None], output_, ax=ax_left, **kwargs)
-                plot_labels(img[None,...], [y_], ax=ax_right, **kwargs)
+                plot_output(img[None], output_, ax=ax_left, thresh=thresh, **kwargs)
+                plot_labels(img[None, ...], [y_], ax=ax_right, **kwargs)
         else:
             plot_output(imgs, output, **kwargs)
 
@@ -420,7 +419,9 @@ def collate(batch):
 
 
 @torch.no_grad()
-def plot_output(imgs: ArrayLike, output: DETROutput, enforce_cpu: bool = True, **kwargs):
+def plot_output(
+    imgs: ArrayLike, output: DETROutput, enforce_cpu: bool = True, thresh: float = 0.2, **kwargs
+):
     """
     imgs: batch of imgs
     """
@@ -435,7 +436,7 @@ def plot_output(imgs: ArrayLike, output: DETROutput, enforce_cpu: bool = True, *
             "pred_boxes": output["pred_boxes"].cpu(),
         }
 
-    class_predss, box_predss = postprocess(output)
+    class_predss, box_predss = postprocess(output, thresh)
     for img, class_preds, box_preds in zip(imgs, class_predss, box_predss):
         utils.plot_bboxes(img=img, classes=class_preds, boxes=box_preds, **kwargs)
 
