@@ -344,9 +344,12 @@ class FishDETR(nn.Module):
             imgs = alt_imgs
 
         if y is not None:
-            fig, (ax_left, ax_right) = plt.subplots(1, 2, figsize=kwargs.get("figsize", None))
-            plot_output(imgs, output, ax=ax_left, **kwargs)
-            plot_labels(imgs, y, ax=ax_right, **kwargs)
+            for img, logits, boxes, y_ in zip(imgs, output["pred_logits"], output["pred_boxes"], y):
+                fig, (ax_left, ax_right) = plt.subplots(1, 2, figsize=kwargs.get("figsize", None))
+                # Dummy stuff
+                output_ = {"pred_logits": logits[None], "pred_boxes": boxes[None]}
+                plot_output(img[None], output_, ax=ax_left, **kwargs)
+                plot_labels(img[None,...], [y_], ax=ax_right, **kwargs)
         else:
             plot_output(imgs, output, **kwargs)
 
