@@ -274,7 +274,7 @@ class TorchStandardDataset(BlenderStandardDataset):
             preprocessor = preprocessor,
             *ppargs,
             **ppkwargs
-        )    
+        )
         self.device = device    
 
     def get_batch(self, batchnr: int) -> Tuple[List[torch.Tensor], List[Dict[str, torch.Tensor]]]:

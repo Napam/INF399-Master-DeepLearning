@@ -1,6 +1,7 @@
 import numpy as np
 from numpy.lib.stride_tricks import as_strided 
 import torch
+from utils import debug, debugs, debugt
 
 def fixed_single_channel_2d_conv():
     a = np.arange(5*5).reshape(5,5)
@@ -55,17 +56,18 @@ def batch_rgb_2d_conv(a: np.ndarray, f: np.ndarray):
     i, k = f.shape[-2:]
     u = np.array(a.itemsize)
     b = as_strided(a, shape=(n,h-i+1,w-k+1,c,i,k), strides=u*(c*h*w,w,1,h*w,w,1))
-    print(np.tensordot(b, f, axes=[[3,4,5],[0,1,2]]))
+    print(np.tensordot(b, f, axes=3))
 
-s = (2,3,10,10)
+s = (2,3,5,5)
 a = np.arange(np.prod(s)).reshape(s)
 k = np.array([
         [[ 1, 1],[ 1, 1]],
         [[ 0, 0],[ 0, 0]],
         [[ 1, 1],[ 1, 1]],
     ])
+
+# k = np.stack((k,k))
 batch_rgb_2d_conv(a, k)
-print(np.stack([k,k]).shape)
 # fixed_batch_rgb_2d_conv()
     
 
