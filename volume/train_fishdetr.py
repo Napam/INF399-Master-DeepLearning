@@ -9,7 +9,7 @@ import torchvision.transforms as T
 from torch.utils.data import DataLoader
 import utils
 from utils import debugt, debugs, debug
-import datetime
+from datetime import datetime
 
 import fishdetr_batchboy as detr
 # import detr_batchboy_regular as detr
@@ -55,7 +55,8 @@ def _validate_model(context: dict, traintqdminfo: dict) -> dict:
         desc=f' Validating',
         ascii=True,
         position=0,
-        leave=False
+        leave=False,
+        file=sys.stdout
     )
 
     model.eval()
@@ -92,7 +93,8 @@ def _train_model(context: dict, epoch: int, n_epochs: int, leave_tqdm: bool) -> 
         desc=f' Epoch {epoch+1}/{n_epochs}',
         ascii=True,
         position=0,
-        leave=leave_tqdm
+        leave=leave_tqdm,
+        file=sys.stdout
     )
 
     model.train()
@@ -153,7 +155,7 @@ def train_model(
             trainbar.disable = False
             trainbar.set_postfix({**traintqdminfo, **valtqdminfo})
             trainbar.disable = True
-            print(file=sys.stderr) # for newline
+            print() # for newline
         
             # Save best models
             if save_best:
@@ -179,14 +181,20 @@ def train_model(
 
 if __name__ == '__main__':
     model = detr.FishDETR().to(device)
+
+    # p =  os.path.join(WEIGHTS_DIR,'weights_2021-02-25','detr_statedicts_epoch25_train1.1062_val1.0961_2021-02-25T22:18:32.pth')
+    # model.load_state_dict(torch.load(p)['model_state_dict'])
+    
+    model.load_state_dict(torch.load('last_epoch_detr.pth'))
+
     db_con = sqlite3.connect(f'file:{os.path.join(DATASET_DIR,"bboxes.db")}?mode=ro', uri=True)
     n_data = pd.read_sql_query('SELECT COUNT(DISTINCT(imgnr)) FROM bboxes_std', db_con).values[0][0]
 
     TRAIN_RANGE = (0, int(3/4*n_data))
     VAL_RANGE = (int(3/4*n_data), n_data)
 
-    # TRAIN_RANGE = (0, 3072)
-    # VAL_RANGE = (3072, 3588)
+    # TRAIN_RANGE = (0, 6)
+    # VAL_RANGE = (6, 12)
 
     traingen = TorchStereoDataset(DATASET_DIR, TABLE, 1, shuffle=True, imgnrs=range(*TRAIN_RANGE))
     valgen = TorchStereoDataset(DATASET_DIR, TABLE, 1, shuffle=False, imgnrs=range(*VAL_RANGE))
@@ -205,7 +213,7 @@ if __name__ == '__main__':
     )
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
-    optimizer.param_groups[0]['lr'] = 2e-5
+    optimizer.param_groups[0]['lr'] = 5e-6
     weight_dict = {'loss_ce': 1, 'loss_bbox': 1 , 'loss_giou': 1}
     losses = ['labels', 'boxes', 'cardinality']
     matcher = HungarianMatcher()
@@ -218,8 +226,11 @@ if __name__ == '__main__':
         model,
         criterion,
         optimizer,
-        n_epochs=10,
+        n_epochs=100,
         device=device,
         save_best=True,
         validate=True
     )
+
+    utils.save_model(model.state_dict(), "last_epoch_detr.pth")
+    
