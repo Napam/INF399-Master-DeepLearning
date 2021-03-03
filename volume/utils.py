@@ -19,12 +19,11 @@ from matplotlib.axes import Axes
 import datetime
 
 
-def pytorch_init_janus_gpu():
-    device_id = 1
+def pytorch_init_janus_gpu(device_id: int = 1):
     torch.cuda.set_device(device_id)
 
     # Sanity checks
-    assert torch.cuda.current_device() == 1, "Using wrong GPU"
+    assert torch.cuda.current_device() == device_id, "Using wrong GPU"
     assert torch.cuda.device_count() == 2, "Cannot find both GPUs"
     assert torch.cuda.get_device_name(0) == "GeForce RTX 2080 Ti", "Unexpected GPU name"
     assert torch.cuda.is_available() == True, "GPU not available"
@@ -235,9 +234,9 @@ def _tag(fname: str, offset: int = 0) -> str:
         classname = f_locals["self"].__class__.__name__
         tags[1] = classname + "." + funcname
 
-    tags = f"\033[32;2m{tuple(tags)}\033[0m ".replace("'", "")
+    tags = f"\033[32m{tuple(tags)}\033[0m ".replace("'", "")
 
-    return tags + f"\033[2m{arg}:\033[0m"
+    return tags + f"\033[0m{arg}:\033[0m"
 
 
 def debug(obj: Any, pretty: bool = False):

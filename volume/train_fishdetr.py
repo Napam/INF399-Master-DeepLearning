@@ -27,7 +27,7 @@ seed = 42069
 utils.seed_everything(seed)
 
 try:
-    device = utils.pytorch_init_janus_gpu()
+    device = utils.pytorch_init_janus_gpu(0)
     print(f'Using device: {device} ({torch.cuda.get_device_name()})')
     print(utils.get_cuda_status(device))
 except AssertionError as e:
@@ -204,12 +204,14 @@ if __name__ == '__main__':
         dataset = traingen,
         batch_size = BATCH_SIZE,
         collate_fn = detr.collate,
+        pin_memory = True,
     )
 
     valloader = DataLoader(
         dataset = valgen,
         batch_size = BATCH_SIZE,
         collate_fn = detr.collate,
+        pin_memory = True
     )
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
@@ -226,7 +228,7 @@ if __name__ == '__main__':
         model,
         criterion,
         optimizer,
-        n_epochs=100,
+        n_epochs=300,
         device=device,
         save_best=True,
         validate=True
