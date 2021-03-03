@@ -17,7 +17,8 @@ from numpy.typing import ArrayLike
 from torch.types import Number
 from matplotlib.axes import Axes
 import datetime
-
+import threading
+import time
 
 def pytorch_init_janus_gpu(device_id: int = 1):
     torch.cuda.set_device(device_id)
@@ -206,6 +207,47 @@ def plot_bboxes(
 
     return ax
 
+
+class EnterDetector(threading.Thread):
+    '''
+    Runs a thread to listen after enter 
+
+    Use by checking by polling this thing by checking EnterDetector().active attribute
+    '''
+    def __init__(self, name: str='enterdector'):
+        self.enter_detected = False
+        super().__init__(name=name)
+        self.start()
+
+    def run(self):
+        while True:
+            input()
+            self.enter_detected = True
+            return
+
+    def poll(self) -> bool:
+        return self.enter_detected
+
+        
+def monitor_file(file: str, decode: str = None, delay: float = 0.001, *args, **kwargs):
+    '''
+    Continously read from file
+    '''
+    with open(file, *args, **kwargs) as f:
+        enterkey = EnterDetector('enterdetector1')
+        line = f.read()
+        if decode:
+            line = line.decode(decode)
+
+        print(line, end='') # Print everything first
+        while not enterkey.poll():
+            if line := f.read():
+                if decode:
+                    line = line.decode(decode)
+                print(line, end='')
+            else:
+                time.sleep(delay) 
+    print()
 
 def _tag(fname: str, offset: int = 0) -> str:
     """

@@ -10,6 +10,7 @@ from torch.utils.data import DataLoader
 import utils
 from utils import debugt, debugs, debug
 from datetime import datetime
+from torch import optim
 
 import fishdetr_batchboy as detr
 # import detr_batchboy_regular as detr
@@ -22,18 +23,12 @@ from models.matcher import HungarianMatcher
 from models.detr import SetCriterion
 import os
 import sqlite3
+from queue import Queue
+import io
 
 seed = 42069
 utils.seed_everything(seed)
 
-try:
-    device = utils.pytorch_init_janus_gpu(0)
-    print(f'Using device: {device} ({torch.cuda.get_device_name()})')
-    print(utils.get_cuda_status(device))
-except AssertionError as e:
-    print('GPU could not initialize, got error:', e)
-    device = torch.device('cpu')
-    print('Device is set to CPU')
 
 TORCH_CACHE_DIR = 'torch_cache'
 DATASET_DIR = '/mnt/blendervol/leftright_left_data'
@@ -42,9 +37,11 @@ WEIGHTS_DIR = 'fish_statedicts'
 torch.hub.set_dir(TORCH_CACHE_DIR)
 num2name = eval(open(os.path.join(DATASET_DIR,"metadata.txt"), 'r').read())
 
+
 def _validate_model(context: dict, traintqdminfo: dict) -> dict:
     model = context['model']
     criterion = context['criterion']
+    stop_callback = context['stop_callback']
 
     running_val_loss = 0.0
     # valbar will disappear after it is done since leave=False
@@ -56,7 +53,7 @@ def _validate_model(context: dict, traintqdminfo: dict) -> dict:
         ascii=True,
         position=0,
         leave=False,
-        file=sys.stdout
+        file=context['file']
     )
 
     model.eval()
@@ -65,6 +62,7 @@ def _validate_model(context: dict, traintqdminfo: dict) -> dict:
     # Loop through val batches
     with torch.no_grad():
         for i, (images, labels) in valbar:
+            stop_callback()
             X, y = detr.preprocess(images, labels, context['device'])
 
             output: detr.DETROutput
@@ -80,10 +78,14 @@ def _validate_model(context: dict, traintqdminfo: dict) -> dict:
     return valtqdminfo
 
 
-def _train_model(context: dict, epoch: int, n_epochs: int, leave_tqdm: bool) -> Tuple[Iterable, dict]:
-    model = context['model']
-    criterion = context['criterion']
-    optimizer = context['optimizer']
+def _train_model(context: dict, leave_tqdm: bool) -> Tuple[Iterable, dict]:
+    model: nn.Module = context['model']
+    criterion: nn.Module = context['criterion']
+    optimizer: optim.Optimizer = context['optimizer']
+    n_epochs: int = context['n_epochs']
+    epoch: int = context['epoch']
+    batch_callbacks: Queue = context['batch_callbacks']
+    stop_callback = context['stop_callback']
     
     running_train_loss = 0.0
     trainbar = tqdm(
@@ -94,7 +96,7 @@ def _train_model(context: dict, epoch: int, n_epochs: int, leave_tqdm: bool) -> 
         ascii=True,
         position=0,
         leave=leave_tqdm,
-        file=sys.stdout
+        file=context['file']
     )
 
     model.train()
@@ -102,6 +104,7 @@ def _train_model(context: dict, epoch: int, n_epochs: int, leave_tqdm: bool) -> 
 
     # Loop through train batches
     for i, (images, labels) in trainbar:
+        stop_callback()
         X, y = detr.preprocess(images, labels, context['device'])
 
         output: detr.DETROutput
@@ -113,21 +116,28 @@ def _train_model(context: dict, epoch: int, n_epochs: int, leave_tqdm: bool) -> 
         train_loss = running_train_loss / (i+1)
         traintqdminfo = {'train loss':train_loss}
         trainbar.set_postfix(traintqdminfo)
+
+        while not batch_callbacks.empty():    
+            batch_callbacks.get()(context)
     
     return trainbar, traintqdminfo
 
 
-@utils.interruptable
+# @utils.interruptable
 def train_model(
         trainloader: DataLoader, 
         valloader: DataLoader, 
         model: nn.Module, 
-        criterion, 
-        optimizer, 
+        criterion: nn.Module, 
+        optimizer: optim.Optimizer, 
         n_epochs: int, 
         device: torch.device, 
+        epoch_callbacks: Queue,
+        batch_callbacks: Queue,
         validate: bool = True,
-        save_best: bool = True
+        save_best: bool = True,
+        file: Optional[io.TextIOBase] = None,
+        stop_callback: Optional[Callable] = None
     ):
     
     # for convenience
@@ -137,13 +147,31 @@ def train_model(
         'model':model,
         'criterion':criterion,
         'optimizer':optimizer,
-        'device':device
+        'n_epochs':n_epochs,
+        'device':device,
+        'batch_callbacks':batch_callbacks,
+        'epoch_callbacks':epoch_callbacks,
+        'epoch':None, # Current epoch
+        'file':file,
+        'stop_callback':stop_callback
     }
-    
+
+    if file is None:
+        file = sys.stdout
+        context['file'] = sys.stdout
+
+    if stop_callback is None:
+        stop_callback = lambda: None
+        context['stop_callback'] = stop_callback
+
     best_val_loss = np.inf
     
     for epoch in range(n_epochs):
-        trainbar, traintqdminfo = _train_model(context, epoch, n_epochs, not validate)
+        context['epoch'] = epoch
+        trainbar, traintqdminfo = _train_model(context, not validate)
+
+        while not epoch_callbacks.empty():
+            epoch_callbacks.get()(context)
             
         if validate:
             valtqdminfo = _validate_model(context, traintqdminfo)
@@ -155,7 +183,7 @@ def train_model(
             trainbar.disable = False
             trainbar.set_postfix({**traintqdminfo, **valtqdminfo})
             trainbar.disable = True
-            print() # for newline
+            print(file=file) # for newline
         
             # Save best models
             if save_best:
@@ -179,26 +207,27 @@ def train_model(
                         f = filepath
                     )
 
-if __name__ == '__main__':
+
+def train_fn(batch_callback_queue: Queue, epoch_callback_queue: Queue, stop_callback: Callable, file: io.TextIOBase):
+    try:
+        device = utils.pytorch_init_janus_gpu(0)
+        print(f'Using device: {device} ({torch.cuda.get_device_name()})', file=file)
+        print(utils.get_cuda_status(device), file=file)
+    except AssertionError as e:
+        print('GPU could not initialize, got error:', e, file=file)
+        device = torch.device('cpu')
+        print('Device is set to CPU', file=file)
+
     model = detr.FishDETR().to(device)
-
-    # p =  os.path.join(WEIGHTS_DIR,'weights_2021-02-25','detr_statedicts_epoch25_train1.1062_val1.0961_2021-02-25T22:18:32.pth')
-    # model.load_state_dict(torch.load(p)['model_state_dict'])
-    
     model.load_state_dict(torch.load('last_epoch_detr.pth'))
-
     db_con = sqlite3.connect(f'file:{os.path.join(DATASET_DIR,"bboxes.db")}?mode=ro', uri=True)
     n_data = pd.read_sql_query('SELECT COUNT(DISTINCT(imgnr)) FROM bboxes_std', db_con).values[0][0]
-
-    TRAIN_RANGE = (0, int(3/4*n_data))
-    VAL_RANGE = (int(3/4*n_data), n_data)
-
-    # TRAIN_RANGE = (0, 6)
-    # VAL_RANGE = (6, 12)
-
+    # TRAIN_RANGE = (0, int(3/4*n_data))
+    # VAL_RANGE = (int(3/4*n_data), n_data)
+    TRAIN_RANGE = (0, 12)
+    VAL_RANGE = (12, 18)
     traingen = TorchStereoDataset(DATASET_DIR, TABLE, 1, shuffle=True, imgnrs=range(*TRAIN_RANGE))
     valgen = TorchStereoDataset(DATASET_DIR, TABLE, 1, shuffle=False, imgnrs=range(*VAL_RANGE))
-
     BATCH_SIZE = 6
     trainloader = DataLoader(
         dataset = traingen,
@@ -206,16 +235,14 @@ if __name__ == '__main__':
         collate_fn = detr.collate,
         pin_memory = True,
     )
-
     valloader = DataLoader(
         dataset = valgen,
         batch_size = BATCH_SIZE,
         collate_fn = detr.collate,
         pin_memory = True
     )
-
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
-    optimizer.param_groups[0]['lr'] = 1e-6
+    optimizer.param_groups[0]['lr'] = 5e-6
     weight_dict = {'loss_ce': 1, 'loss_bbox': 1 , 'loss_giou': 1}
     losses = ['labels', 'boxes', 'cardinality']
     matcher = HungarianMatcher()
@@ -223,16 +250,28 @@ if __name__ == '__main__':
     criterion = criterion.to(device)
 
     train_model(
-        trainloader,
-        valloader,
-        model,
-        criterion,
-        optimizer,
-        n_epochs=100,
-        device=device,
-        save_best=True,
-        validate=True
+        trainloader = trainloader,
+        valloader = valloader,
+        model = model, 
+        criterion = criterion,
+        optimizer = optimizer,
+        n_epochs = 5,
+        device = device,
+        epoch_callbacks = epoch_callback_queue,
+        batch_callbacks = batch_callback_queue,
+        validate = True,
+        save_best = True,
+        file = file,
+        stop_callback = stop_callback
     )
 
-    utils.save_model(model.state_dict(), "last_epoch_detr.pth")
-    
+    del model
+    del criterion
+    del matcher 
+    del optimizer
+    del trainloader
+    del traingen
+    del valgen
+    with torch.no_grad():
+        torch.cuda.empty_cache()
+    return

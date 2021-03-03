@@ -1,4 +1,4 @@
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Callable, Dict, Iterable, List, Optional, Tuple
 
 import numpy as np
 from numpy.typing import ArrayLike
@@ -255,7 +255,7 @@ class FishDETR(nn.Module):
         for param in module.parameters():
             param.requires_grad = False
 
-    def forward(self, imgs: Tuple[torch.Tensor, torch.Tensor]):
+    def forward(self, imgs: Tuple[torch.Tensor, torch.Tensor], *, callback: Optional[Callable] = None):
         # imgs[0] and imgs[1] should be (N, C, H, W)
         assert isinstance(imgs, (tuple, list))
         assert len(imgs) == 2
@@ -263,7 +263,12 @@ class FishDETR(nn.Module):
         h_left = self.encoder(imgs[0])
         h_right = self.encoder(imgs[1])
 
-        return self.decoder(h_left, h_right)
+        output = self.decoder(h_left, h_right)
+        
+        if callback is not None:
+            callback()
+            
+        return output
 
     def train_on_batch(
         self,
