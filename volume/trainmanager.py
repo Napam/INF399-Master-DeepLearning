@@ -1,17 +1,24 @@
+#!/usr/bin/env python
+
 from typing import Any, Callable, Optional
 from pypatconsole import menu
 import threading
 import time
-import queue
+from queue import Queue
+from collections import deque
 import utils
 import io
 from functools import wraps
 import tqdm
 import argparse
+import importlib
+
 # import train_fn
-import train_fn as tf
+# import train_fn as tf
 import sys
 import multiprocessing
+import contextlib
+
 
 def are_you_sure(f):
     @wraps(f)
@@ -21,37 +28,64 @@ def are_you_sure(f):
         if inp == "y":
             output = f(*args, **kwargs)
             return output
+
     return wrapper
 
 
-# def train_fn(batch_queue: queue.Queue, epoch_queue: queue.Queue, stop_callback: Callable, file):
-#     i = 0
-#     while i := i + 1:
-#         if i > 2:
-#             break
-#         args = (10,)
-#         kwargs = dict(file=file, ascii=True, desc="Test")
+def call_callbacks(
+    callbacks: Queue, pop: bool = False, mutex: Optional[threading.Lock] = None, *args, **kwargs
+):
+    if mutex is None:
+        mutex = contextlib.nullcontext()
 
-#         # if not batch_queue.empty():
-#             # args, kwargs = epoch_queue.get()(*args, **kwargs)
+    current_callback = None
+    with mutex:
+        try:
+            if pop:
+                while not callbacks.empty():
+                    current_callback = callbacks.get()
+                    current_callback(*args, **kwargs)
+            else:
+                for callback in callbacks.queue:
+                    current_callback = callback
+                    current_callback(*args, **kwargs)
+        except Exception as e:
+            print(f"\nCallback {current_callback} produced error: {e}")
 
-#         for j in tqdm.trange(*args, **kwargs):
-#             stop_callback()
-#             time.sleep(0.5)
 
+def train_fn(
+    batch_single_callbacks: Queue,
+    epoch_single_callbacks: Queue,
+    batch_persist_callbacks: Queue,
+    epoch_persist_callbacks: Queue,
+    stop_callback: Callable,
+    file: io.BufferedIOBase,
+    mutex: threading.Lock,
+):
+    context = {
+        "n_epochs": 1000,
+        "n_batches": None,
+        "epoch": None,
+        "batch": None,
+        "epoch_single_callbacks": epoch_single_callbacks,
+        "batch_single_callbacks": batch_single_callbacks,
+        "batch_persist_callbacks": batch_persist_callbacks,
+        "epoch_persist_callbacks": epoch_persist_callbacks,
+        "file": file,
+        "stop_callback": stop_callback,
+    }
 
-def train_fn_outer(*args):
-    t = threading.Thread(target=tf.train_fn, args=args)
-    t.start()
-    t.join()
-    file = args[-1]
-    print("Process finished successfully", file=file, flush=True)
-    global TRAIN_FLAG 
-    TRAIN_FLAG = False
-    # del sys.modules["tf"]
-    # del tf
-    del threading.enumerate()[-1]
-    return
+    for epoch in range(context["n_epochs"]):
+        batches = tqdm.trange(10, file=file, ascii=True, desc="Test")
+        context["epoch"] = epoch
+        context["n_batches"] = len(batches)
+        for batch in batches:
+            stop_callback()
+            time.sleep(0.5)
+            call_callbacks(batch_persist_callbacks, pop=False, mutex=mutex, context=context)
+            call_callbacks(batch_single_callbacks, pop=True, mutex=mutex, context=context)
+        call_callbacks(epoch_persist_callbacks, pop=False, mutex=mutex, context=context)
+        call_callbacks(epoch_single_callbacks, pop=True, mutex=mutex, context=context)
 
 
 def kick():
@@ -66,14 +100,15 @@ def start_training():
     global TRAIN_FLAG, TRAIN_THREAD
     if TRAIN_FLAG == False:
         TRAIN_FLAG = True
-        TRAIN_THREAD = threading.Thread(target=train_fn_outer, args=(BATCH_CLBK_QUEUE, EPOCH_CLBK_QUEUE, kick, FILE))
-        print('Starting training', file=FILE, flush=True)
+        TRAIN_THREAD = threading.Thread(
+            target=train_fn, args=(BATCH_SINGLE_CLBKS, EPOCH_SINGLE_CLBKS, kick, FILE, MUTEX)
+        )
+        print("Starting training", file=FILE, flush=True)
         TRAIN_THREAD.start()
-        view_output_file()
     else:
-        print('Already training, redirecting to view of output file')
+        print("Already training, redirecting to view of output file")
         time.sleep(0.5)
-        view_output_file()
+    view_output_file()
 
 
 @are_you_sure
@@ -84,7 +119,7 @@ def stop_training():
     global TRAIN_FLAG, TRAIN_THREAD
     if TRAIN_FLAG == True:
         TRAIN_FLAG = False
-        TRAIN_THREAD.join() # Exception tracebacks of thread will be shown at this stage
+        TRAIN_THREAD.join()  # Exception tracebacks of thread will be shown at this stage
         print("Training stopped", file=FILE, flush=True)
         view_output_file()
     else:
@@ -92,20 +127,69 @@ def stop_training():
         time.sleep(0.5)
 
 
-@are_you_sure
-def add_batch_callback():
-    """
-    Add callback after batch ends
-    """
-    pass
+def _import_function_from_module(modulename: str, funcname: str):
+    try:
+        module = importlib.import_module(modulename)
+    except ModuleNotFoundError as e:
+        print(f"Could import module, got {e}")
+
+    module = utils.reloader(module)  # Refreshes code if module loaded before
+
+    try:
+        func = module.__dict__[funcname]
+    except KeyError as e:
+        print(f'Could not find function "{funcname}" in module "{modulename}", got error {e}')
+    return func
 
 
-@are_you_sure
-def add_epoch_callback():
+def callback_menu():
     """
-    Add callback after epoch ends
+    Callback menu
     """
-    pass
+
+    def add_single_batch_callback(modulename: str, funcname: str):
+        """
+        Add \033[32msingle use\033[0m callback after \033[32mbatch\033[0m ends
+        """
+        func = _import_function_from_module(modulename, funcname)
+        BATCH_SINGLE_CLBKS.put(func)
+        input("Waiting for callback prints, press enter to return to menu\n\n")
+
+    def add_single_epoch_callback(modulename: str, funcname: str):
+        """
+        Add \033[32msingle use\033[0m callback after \033[32mepoch\033[0m ends
+        """
+        func = _import_function_from_module(modulename, funcname)
+        EPOCH_SINGLE_CLBKS.put(func)
+        input("Waiting for callback prints, press enter to return to menu\n\n")
+
+    def add_persistent_batch_callback(modulename: str, funcname: str):
+        """
+        Add \033[32mpersistent\033[0m callback after \033[32mbatch\033[0m ends
+        """
+        func = _import_function_from_module(modulename, funcname)
+        BATCH_PERSIST_CLBKS.put(func)
+        input("Waiting for callback prints, press enter to return to menu\n\n")
+
+    def add_persistent_epoch_callback(modulename: str, funcname: str):
+        """
+        Add \033[32mpersistent\033[0m callback after \033[32mepoch\033[0m ends
+        """
+        func = _import_function_from_module(modulename, funcname)
+        EPOCH_PERSIST_CLBKS.put(func)
+        input("Waiting for callback prints, press enter to return to menu\n\n")
+
+    def delete_persistent_batch_callback():
+        """
+        \033[31mDelete\033[0m \033[32msingle use\033[0m callback after \033[32mepoch\033[0m ends
+        """
+
+    def delete_persistent_epoch_callback():
+        """
+        \033[31mDelete\033[0m \033[32mpersistent\033[0m callback after \033[32mepoch\033[0m ends
+        """
+
+    menu(locals(), title=" Callback menu ")
 
 
 @are_you_sure
@@ -124,27 +208,27 @@ def view_output_file():
 
 
 def view_status():
-    '''
+    """
     View status
-    '''
+    """
     utils.debug(TRAIN_FLAG)
     utils.debug(TRAIN_THREAD)
 
-    BATCH_CALLBACK_QUEUE = list(BATCH_CLBK_QUEUE.queue)
-    EPOCH_CALLBACK_QUEUE = list(BATCH_CLBK_QUEUE.queue)
+    BATCH_CALLBACK_QUEUE = list(BATCH_SINGLE_CLBKS.queue)
+    EPOCH_CALLBACK_QUEUE = list(EPOCH_SINGLE_CLBKS.queue)
     utils.debug(BATCH_CALLBACK_QUEUE)
     utils.debug(EPOCH_CALLBACK_QUEUE)
 
-    print('Current runnig threads:')
+    print("Current runnig threads:")
     for t in threading.enumerate():
         print(t)
-    
+
     input()
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--unlock', action='store_true')
+    parser.add_argument("--unlock", action="store_true")
     args = parser.parse_args()
 
     if args.unlock:
@@ -152,13 +236,17 @@ if __name__ == "__main__":
         TRAIN_THREAD: Optional[threading.Thread] = None
         FILE: io.TextIOBase = open("output.txt", "a+")
         BYTEFILE: io.BufferedIOBase = open("output.txt", "rb")
-        BATCH_CLBK_QUEUE: queue.Queue = queue.Queue()
-        EPOCH_CLBK_QUEUE: queue.Queue = queue.Queue()
+        EPOCH_SINGLE_CLBKS: Queue = Queue()
+        BATCH_SINGLE_CLBKS: Queue = Queue()
+        BATCH_PERSIST_CLBKS: Queue = Queue()
+        EPOCH_PERSIST_CLBKS: Queue = Queue()
+        BATCH_ALL_CLBKS: deque = deque()
+        EPOCH_ALL_CLBKS: deque = deque()
+        MUTEX = threading.Lock()
         cases = [
             start_training,
             stop_training,
-            add_batch_callback,
-            add_epoch_callback,
+            callback_menu,
             clear_output_file,
             view_status,
             view_output_file,
@@ -168,4 +256,4 @@ if __name__ == "__main__":
             view_output_file,
         ]
 
-    menu(cases, title=" Train manager ", blank_proceedure="pass")
+    menu(cases, title=" Train manager ", blank_proceedure="pass", main=True)

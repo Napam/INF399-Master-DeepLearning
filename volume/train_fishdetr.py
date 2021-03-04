@@ -186,6 +186,7 @@ if __name__ == '__main__':
     # model.load_state_dict(torch.load(p)['model_state_dict'])
     
     model.load_state_dict(torch.load('last_epoch_detr.pth'))
+    # model.load_state_dict(torch.load('fish_statedicts/weights_2021-03-03/detr_statedicts_epoch1_train1.3846_val1.7849_2021-03-03T20:28:52.pth')['model_state_dict'])
 
     db_con = sqlite3.connect(f'file:{os.path.join(DATASET_DIR,"bboxes.db")}?mode=ro', uri=True)
     n_data = pd.read_sql_query('SELECT COUNT(DISTINCT(imgnr)) FROM bboxes_std', db_con).values[0][0]
@@ -228,11 +229,11 @@ if __name__ == '__main__':
         model,
         criterion,
         optimizer,
-        n_epochs=100,
+        n_epochs=10,
         device=device,
         save_best=True,
         validate=True
     )
 
-    utils.save_model(model.state_dict(), "last_epoch_detr.pth")
+    # utils.save_model(model.state_dict(), "last_epoch_detr.pth")
     
