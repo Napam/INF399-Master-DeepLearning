@@ -14,7 +14,6 @@ from matplotlib import pyplot as plt
 StereoImgs = Tuple[torch.Tensor, torch.Tensor]
 DETROutput = Dict[str, torch.Tensor]
 
-
 class Encoder(nn.Module):
     def __init__(
         self,

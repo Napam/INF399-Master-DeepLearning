@@ -17,9 +17,11 @@ from generators import TorchStereoDataset
 from tqdm import tqdm
 
 import sys
-sys.path.append('./detr_custom/')
-from models.matcher import HungarianMatcher
-from models.detr import SetCriterion
+# sys.path.append('./detr_custom/')
+# from models.matcher import HungarianMatcher
+# from models.detr import SetCriterion
+from hungarianmatcher import HungarianMatcher
+from setccriterion import SetCriterion
 import os
 import sqlite3
 
@@ -27,7 +29,7 @@ seed = 42069
 utils.seed_everything(seed)
 
 try:
-    device = utils.pytorch_init_janus_gpu(0)
+    device = utils.pytorch_init_janus_gpu(1)
     print(f'Using device: {device} ({torch.cuda.get_device_name()})')
     print(utils.get_cuda_status(device))
 except AssertionError as e:
@@ -185,10 +187,11 @@ if __name__ == '__main__':
     # p =  os.path.join(WEIGHTS_DIR,'weights_2021-02-25','detr_statedicts_epoch25_train1.1062_val1.0961_2021-02-25T22:18:32.pth')
     # model.load_state_dict(torch.load(p)['model_state_dict'])
     
-    model.load_state_dict(torch.load('last_epoch_detr.pth'))
-    # model.load_state_dict(torch.load('fish_statedicts/weights_2021-03-03/detr_statedicts_epoch1_train1.3846_val1.7849_2021-03-03T20:28:52.pth')['model_state_dict'])
+    # model.load_state_dict(torch.load('last_epoch_detr.pth'))
+    model.load_state_dict(torch.load('fish_statedicts/weights_2021-03-04/detr_statedicts_epoch1_train0.1694_val2.4205_2021-03-04T09:49:39.pth')['model_state_dict'])
 
     db_con = sqlite3.connect(f'file:{os.path.join(DATASET_DIR,"bboxes.db")}?mode=ro', uri=True)
+    print("Getting number of images in database")
     n_data = pd.read_sql_query('SELECT COUNT(DISTINCT(imgnr)) FROM bboxes_std', db_con).values[0][0]
 
     TRAIN_RANGE = (0, int(3/4*n_data))
@@ -218,7 +221,7 @@ if __name__ == '__main__':
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
     optimizer.param_groups[0]['lr'] = 1e-6
     weight_dict = {'loss_ce': 1, 'loss_bbox': 1 , 'loss_giou': 1}
-    losses = ['labels', 'boxes', 'cardinality']
+    losses = ['labels', 'boxes']
     matcher = HungarianMatcher()
     criterion = SetCriterion(6, matcher, weight_dict, eos_coef = 0.5, losses=losses)
     criterion = criterion.to(device)
@@ -235,5 +238,5 @@ if __name__ == '__main__':
         validate=True
     )
 
-    # utils.save_model(model.state_dict(), "last_epoch_detr.pth")
+    utils.save_model(model.state_dict(), "last_epoch_detr.pth")
     

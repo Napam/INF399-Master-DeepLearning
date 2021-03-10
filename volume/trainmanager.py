@@ -246,7 +246,7 @@ def callback_menu(
 @are_you_sure
 def clear_output_file():
     """
-    Clear output file
+    Clear output file test 
     """
     FILE.truncate(0)
 

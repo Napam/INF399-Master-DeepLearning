@@ -19,6 +19,7 @@ from matplotlib.axes import Axes
 import datetime
 import threading
 import time
+from torchvision.ops.boxes import box_area
 
 def pytorch_init_janus_gpu(device_id: int = 1):
     torch.cuda.set_device(device_id)
@@ -100,32 +101,79 @@ def box_cxcywh_to_xyxy(x: torch.Tensor):
     """
     Change bounding box format:
 
-          w                 w
-      ---------         x--------
+          w
+      ---------         xy-------
       |       |         |       |
-    h |   x   |  -->  h |       |
+    h |   xy  |  -->    |       |
       |       |         |       |
-      ---------         ---------
+      ---------         -------xy
     """
     x_c, y_c, w, h = x.unbind(1)
     b = [(x_c - 0.5 * w), (y_c - 0.5 * h), (x_c + 0.5 * w), (y_c + 0.5 * h)]
     return torch.stack(b, dim=1)
 
 
+def box_xyxy_to_cxcywh(x):
+    x0, y0, x1, y1 = x.unbind(-1)
+    b = [(x0 + x1) / 2, (y0 + y1) / 2, (x1 - x0), (y1 - y0)]
+    return torch.stack(b, dim=-1)
+
+
 def box_cxcywh_to_xywh(x: torch.Tensor):
     """
     Change bounding box format:
 
-          w                 w    
-      ---------         x--------
+          w                 w
+      ---------         xy-------
       |       |         |       |
-    h |   x   |  -->  h |       |
+    h |   xy  |  -->  h |       |
       |       |         |       |
       ---------         ---------
     """
     x_c, y_c, w, h = x.unbind(1)
     b = [(x_c - 0.5 * w), (y_c - 0.5 * h), w, h]
     return torch.stack(b, dim=1)
+
+
+# modified from torchvision to also return the union
+def box_iou(boxes1, boxes2):
+    area1 = box_area(boxes1)
+    area2 = box_area(boxes2)
+
+    lt = torch.max(boxes1[:, None, :2], boxes2[:, :2])  # [N,M,2]
+    rb = torch.min(boxes1[:, None, 2:], boxes2[:, 2:])  # [N,M,2]
+
+    wh = (rb - lt).clamp(min=0)  # [N,M,2]
+    inter = wh[:, :, 0] * wh[:, :, 1]  # [N,M]
+
+    union = area1[:, None] + area2 - inter
+
+    iou = inter / union
+    return iou, union
+
+
+def generalized_box_iou(boxes1, boxes2):
+    """
+    Generalized IoU from https://giou.stanford.edu/
+
+    The boxes should be in [x0, y0, x1, y1] format
+
+    Returns a [N, M] pairwise matrix, where N = len(boxes1)
+    and M = len(boxes2)
+    """
+    # degenerate boxes gives inf / nan results
+    # so do an early check
+    assert (boxes1[:, 2:] >= boxes1[:, :2]).all()
+    assert (boxes2[:, 2:] >= boxes2[:, :2]).all()
+    iou, union = box_iou(boxes1, boxes2)
+
+    lt = torch.min(boxes1[:, None, :2], boxes2[:, :2])
+    rb = torch.max(boxes1[:, None, 2:], boxes2[:, 2:])
+
+    wh = (rb - lt).clamp(min=0)  # [N,M,2]
+    area = wh[:, :, 0] * wh[:, :, 1]
+
+    return iou - (area - union) / area
 
 
 def plot_bboxes(
@@ -148,7 +196,7 @@ def plot_bboxes(
         Iterable of classes
     boxes : Iterable
         Iterable of bounding boxes in xywh style (top left corner, and w and height):
-              w    
+              w
           ---------
           |       |
         h |   x   |
@@ -209,12 +257,13 @@ def plot_bboxes(
 
 
 class EnterDetector(threading.Thread):
-    '''
-    Runs a thread to listen after enter 
+    """
+    Runs a thread to listen after enter
 
     Use by checking by polling this thing by checking EnterDetector().active attribute
-    '''
-    def __init__(self, name: str='enterdector'):
+    """
+
+    def __init__(self, name: str = "enterdector"):
         self.enter_detected = False
         super().__init__(name=name)
         self.start()
@@ -228,26 +277,27 @@ class EnterDetector(threading.Thread):
     def poll(self) -> bool:
         return self.enter_detected
 
-        
+
 def monitor_file(file: str, decode: str = None, delay: float = 0.001, *args, **kwargs):
-    '''
+    """
     Continously read from file
-    '''
+    """
     with open(file, *args, **kwargs) as f:
-        enterkey = EnterDetector('enterdetector1')
+        enterkey = EnterDetector("enterdetector1")
         line = f.read()
         if decode:
             line = line.decode(decode)
 
-        print(line, end='') # Print everything first
+        print(line, end="")  # Print everything first
         while not enterkey.poll():
             if line := f.read():
                 if decode:
                     line = line.decode(decode)
-                print(line, end='')
+                print(line, end="")
             else:
-                time.sleep(delay) 
-    print()
+                time.sleep(delay)
+    print()  # test comment
+
 
 def _tag(fname: str, offset: int = 0) -> str:
     """
