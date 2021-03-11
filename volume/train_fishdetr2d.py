@@ -11,7 +11,7 @@ import utils
 from utils import debugt, debugs, debug
 from datetime import datetime
 
-import fishdetr_batchboy as detr
+import fishdetr2d as detr
 # import detr_batchboy_regular as detr
 from generators import TorchStereoDataset
 from tqdm import tqdm
@@ -21,7 +21,7 @@ import sys
 # from models.matcher import HungarianMatcher
 # from models.detr import SetCriterion
 from hungarianmatcher import HungarianMatcher
-from setccriterion import SetCriterion
+from setcriterion import SetCriterion
 import os
 import sqlite3
 
@@ -181,6 +181,7 @@ def train_model(
                         f = filepath
                     )
 
+
 if __name__ == '__main__':
     model = detr.FishDETR().to(device)
 
@@ -238,5 +239,5 @@ if __name__ == '__main__':
         validate=True
     )
 
-    utils.save_model(model.state_dict(), "last_epoch_detr.pth")
+    # utils.save_model(model.state_dict(), "last_epoch_detr.pth")
     

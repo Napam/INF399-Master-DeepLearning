@@ -4,9 +4,10 @@ Modules to compute the matching cost and solve the corresponding LSAP.
 """
 import torch
 from scipy.optimize import linear_sum_assignment
+import torch.nn.functional as F
 from torch import nn
 
-from utils import box_cxcywh_to_xyxy, generalized_box_iou
+from utils import box_cxcywh_to_xyxy, debug, generalized_box_iou
 
 
 class HungarianMatcher(nn.Module):
@@ -17,7 +18,15 @@ class HungarianMatcher(nn.Module):
     while the others are un-matched (and thus treated as non-objects).
     """
 
-    def __init__(self, cost_class: float = 1, cost_bbox: float = 1, cost_giou: float = 1):
+    def __init__(
+        self,
+        cost_class: float = 1,
+        cost_bbox: float = 1,
+        cost_giou: float = 1,
+        *,
+        use_giou: bool = True,
+        smooth_l1: bool = False
+    ):
         """Creates the matcher
 
         Params:
@@ -30,10 +39,17 @@ class HungarianMatcher(nn.Module):
         self.cost_bbox = cost_bbox
         self.cost_giou = cost_giou
         assert cost_class != 0 or cost_bbox != 0 or cost_giou != 0, "all costs cant be 0"
+        self.use_giou = use_giou
+
+        if smooth_l1:
+            self.regloss = lambda out_bbox, tgt_bbox: F.smooth_l1_loss(out_bbox, tgt_bbox, reduction="none")
+        else:
+            self.regloss = lambda out_bbox, tgt_bbox: torch.cdist(out_bbox, tgt_bbox, p=1)
+            
 
     @torch.no_grad()
     def forward(self, outputs, targets):
-        """ Performs the matching
+        """Performs the matching
 
         Params:
             outputs: This is a dict that contains at least these entries:
@@ -55,7 +71,9 @@ class HungarianMatcher(nn.Module):
         bs, num_queries = outputs["pred_logits"].shape[:2]
 
         # We flatten to compute the cost matrices in a batch
-        out_prob = outputs["pred_logits"].flatten(0, 1).softmax(-1)  # [batch_size * num_queries, num_classes]
+        out_prob = (
+            outputs["pred_logits"].flatten(0, 1).softmax(-1)
+        )  # [batch_size * num_queries, num_classes]
         out_bbox = outputs["pred_boxes"].flatten(0, 1)  # [batch_size * num_queries, 4]
 
         # Also concat the target labels and boxes
@@ -67,16 +85,22 @@ class HungarianMatcher(nn.Module):
         # The 1 is a constant that doesn't change the matching, it can be ommitted.
         cost_class = -out_prob[:, tgt_ids]
 
-        # Compute the L1 cost between boxes
-        cost_bbox = torch.cdist(out_bbox, tgt_bbox, p=1)
-
-        # Compute the giou cost betwen boxes
-        cost_giou = -generalized_box_iou(box_cxcywh_to_xyxy(out_bbox), box_cxcywh_to_xyxy(tgt_bbox))
+        # Compute the regression (L1 or smooth L1) cost between boxes
+        cost_bbox = self.regloss(out_bbox, tgt_bbox)
 
         # Final cost matrix
-        C = self.cost_bbox * cost_bbox + self.cost_class * cost_class + self.cost_giou * cost_giou
+        C = self.cost_bbox * cost_bbox + self.cost_class * cost_class 
+
+        if self.use_giou:
+            # Compute the giou cost betwen boxes
+            cost_giou = -generalized_box_iou(box_cxcywh_to_xyxy(out_bbox), box_cxcywh_to_xyxy(tgt_bbox))
+            C = C + self.cost_giou * cost_giou
+
         C = C.view(bs, num_queries, -1).cpu()
 
         sizes = [len(v["boxes"]) for v in targets]
         indices = [linear_sum_assignment(c[i]) for i, c in enumerate(C.split(sizes, -1))]
-        return [(torch.as_tensor(i, dtype=torch.int64), torch.as_tensor(j, dtype=torch.int64)) for i, j in indices]
+        return [
+            (torch.as_tensor(i, dtype=torch.int64), torch.as_tensor(j, dtype=torch.int64))
+            for i, j in indices
+        ]

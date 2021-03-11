@@ -67,7 +67,7 @@ class BlenderDatasetBase(Dataset, ABC):
         self.indices = np.unique(self.df["imgnr"])
 
         if shuffle:
-            np.random.shuffle(self.indices)
+            self.shuffle_indices()
 
         self.img_dir = os.path.join(data_dir, "images")
 
@@ -79,6 +79,9 @@ class BlenderDatasetBase(Dataset, ABC):
         self.preprocessor = preprocessor
         self.ppargs = ppargs
         self.ppkwargs = ppkwargs
+
+    def shuffle_indices(self):
+        np.random.shuffle(self.indices)
 
     def __len__(self) -> int:
         return self.n // self.batch_size
@@ -482,17 +485,28 @@ class Torch3DDataset(Blender3DDataset):
         return X_batch, y_batch
 
 if __name__ == "__main__":
-    thing = Torch3DDataset(
-        data_dir="/mnt/blendervol/3d_data",
-        table="bboxes_full",
+    thing = TorchStereoDataset(
+        data_dir="/mnt/blendervol/leftright_left_data",
+        table="bboxes_std",
         batch_size=1,
         imgnrs=range(0, 1000),
     )
 
-    X, y = thing.get_batch(0)
+    from torch.utils.data import DataLoader
+    import fishdetr2d as detr
+    trainloader = DataLoader(
+        dataset = thing,
+        batch_size = 6,
+        collate_fn = detr.collate,
+        pin_memory = True,
+    )
 
-    debugs(X[0][0])
-    debugs(y['boxes'])
+    X, y = next(iter(trainloader))
+    debugt(y)
+    debugt(y[0])
+    debugt(y[0]['labels'])
+    debug(y[0]['labels'])
+    
 
     # thing = BlenderStandardDataset(
     #     data_dir='/mnt/blendervol/objdet_std_data',
