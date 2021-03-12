@@ -3,7 +3,7 @@ import time
 
 file = open('lifelog.txt', 'w+')
 
-for i in range(int(1e4)):
+for i in range(int(1e6)):
     msg = f"Iteration {i}: {datetime.datetime.now()}"
     print(msg, flush=True, file=file)
     print(msg)

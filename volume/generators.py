@@ -484,6 +484,12 @@ class Torch3DDataset(Blender3DDataset):
         }
         return X_batch, y_batch
 
+    def plot_batch(self, batchnr: int):
+        (img,), (bboxes,) = super().get_batch(batchnr)
+        img = img[0]
+        plt.imshow(img)
+        self.plot_bbox(img, bboxes, plt.gca())
+
 if __name__ == "__main__":
     thing = TorchStereoDataset(
         data_dir="/mnt/blendervol/leftright_left_data",

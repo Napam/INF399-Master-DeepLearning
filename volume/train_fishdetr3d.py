@@ -184,6 +184,7 @@ def train_model(
 
 if __name__ == '__main__':
     model = detr.FishDETR().to(device)
+    model.load_state_dict(torch.load('last_epoch_detr_3d.pth'))
 
     db_con = sqlite3.connect(f'file:{os.path.join(DATASET_DIR,"bboxes.db")}?mode=ro', uri=True)
     print("Getting number of images in database")
@@ -193,6 +194,9 @@ if __name__ == '__main__':
     # VAL_RANGE = (int(3/4*n_data), n_data)
 
     TRAIN_RANGE = (0, 384)
+    VAL_RANGE = (384, 416)
+    
+    TRAIN_RANGE = (0, 6)
     VAL_RANGE = (384, 416)
 
     traingen = Torch3DDataset(DATASET_DIR, TABLE, 1, shuffle=True, imgnrs=range(*TRAIN_RANGE))
@@ -216,7 +220,7 @@ if __name__ == '__main__':
     )
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
-    optimizer.param_groups[0]['lr'] = 1e-5
+    optimizer.param_groups[0]['lr'] = 1e-6
     weight_dict = {'loss_ce': 1, 'loss_bbox': 1 , 'loss_giou': 1, 'loss_smooth':1}
     losses = ['labels', 'boxes_smooth_l1']
     matcher = HungarianMatcher(use_giou=False, smooth_l1=False)
@@ -229,7 +233,7 @@ if __name__ == '__main__':
         model,
         criterion,
         optimizer,
-        n_epochs=5000,
+        n_epochs=20000,
         device=device,
         save_best=True,
         validate=True
