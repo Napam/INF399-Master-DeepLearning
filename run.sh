@@ -27,7 +27,7 @@ ARGS+=${@:$OPTIND}
 
 docker run ${DOCKER_FLAGS} -it --hostname ${HOSTNAME} \
     --user ${USER} \
-    -v "$(pwd)/volume":/app \
+    -v "$(pwd)/volume":/project \
     -v "/data/nam012/Blender/volume":/mnt/blendervol \
     --rm --name ${FRAMEWORK}-nam012-cntr nam012-${FRAMEWORK} ${ARGS}
 

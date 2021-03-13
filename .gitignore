@@ -1,5 +1,5 @@
 #Idk what this is
-Trash-*
+.Trash-*
 
 #generated data symlink
 generated_data
@@ -10,8 +10,12 @@ nogit*
 #vim
 *.swp
 
+# home dir stuff
+.bash_history
+.local
+
 # vscode
-.vscode
+.vscode*
 .devcontainer
 
 # data and models

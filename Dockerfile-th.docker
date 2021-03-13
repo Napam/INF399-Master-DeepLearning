@@ -1,7 +1,5 @@
 FROM pytorch/pytorch:1.7.1-cuda11.0-cudnn8-runtime
 
-WORKDIR /app
-
 #gcc since some Python packages requires compiling
 #graphviz for python package torchviz to work (backward graph visualization)
 #libgl1-mesa-glx and libglib2.0-0 is for cv2 to work
@@ -21,6 +19,15 @@ RUN pip --no-cache-dir install -r /tmp/requirements.txt
 # Remove build tools
 RUN apt-get -y --purge autoremove gcc
 
+# Common bashrc
+COPY bashrc /etc/bash.bashrc
+# Assert everyone can use bashrc
+RUN chmod a+rwx /etc/bash.bashrc
+
+# Sets home for EVERYBODY
+WORKDIR /project
+ENV HOME=/project
+
 # Configure user
 ARG user=kanyewest
 ARG uid=1000
@@ -31,10 +38,5 @@ RUN groupadd -g $gid stud && \
     usermod -a -G sudo $user && \
     usermod -a -G root $user && \
     passwd -d $user
-
-# Common bashrc
-COPY bashrc /etc/bash.bashrc
-# Assert everyone can use bashrc, and remove root home dir so it also uses the bashrc
-RUN chmod a+rwx /etc/bash.bashrc && rm -rf /root/
 
 CMD ["/bin/bash"]
