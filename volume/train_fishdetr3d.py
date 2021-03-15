@@ -184,7 +184,7 @@ def train_model(
 
 if __name__ == '__main__':
     model = detr.FishDETR().to(device)
-    model.load_state_dict(torch.load('last_epoch_detr_3d.pth'))
+    # model.load_state_dict(torch.load('last_epoch_detr_3d.pth'))
 
     db_con = sqlite3.connect(f'file:{os.path.join(DATASET_DIR,"bboxes.db")}?mode=ro', uri=True)
     print("Getting number of images in database")
