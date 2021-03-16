@@ -29,7 +29,7 @@ seed = 42069
 utils.seed_everything(seed)
 
 try:
-    device = utils.pytorch_init_janus_gpu(1)
+    device = utils.pytorch_init_janus_gpu(0)
     print(f'Using device: {device} ({torch.cuda.get_device_name()})')
     print(utils.get_cuda_status(device))
 except AssertionError as e:
@@ -172,23 +172,26 @@ def train_model(
                     )
                     filepath = os.path.join(WEIGHTS_DIR, daydir, filename)
 
-                    utils.save_model(
-                        obj={
-                            'model_state_dict':model.state_dict(),
-                            'optimizer':optimizer.state_dict(),
-                            'criterion':criterion.state_dict(),
-                        },
-                        f = filepath
-                    )
+                    # Save sparsely
+                    # REMEMBER TO REMOVE THIS LATER!!!!!
+                    if not epoch % 100:
+                        utils.save_model(
+                            obj={
+                                'model_state_dict':model.state_dict(),
+                                'optimizer':optimizer.state_dict(),
+                                'criterion':criterion.state_dict(),
+                            },
+                            f = filepath
+                        )
 
 
 if __name__ == '__main__':
     model = detr.FishDETR().to(device)
-    # model.load_state_dict(torch.load('last_epoch_detr_3d.pth'))
+    model.load_state_dict(torch.load('fish_statedicts_3d/weights_2021-03-16/detr_statedicts_epoch501_train0.3309_val0.3300_2021-03-16T03:47:13.pth')['model_state_dict'])
 
     db_con = sqlite3.connect(f'file:{os.path.join(DATASET_DIR,"bboxes.db")}?mode=ro', uri=True)
     print("Getting number of images in database")
-    n_data = pd.read_sql_query('SELECT COUNT(DISTINCT(imgnr)) FROM bboxes_std', db_con).values[0][0]
+    n_data = pd.read_sql_query(f'SELECT COUNT(DISTINCT(imgnr)) FROM {TABLE}', db_con).values[0][0]
 
     # TRAIN_RANGE = (0, int(3/4*n_data))
     # VAL_RANGE = (int(3/4*n_data), n_data)
@@ -196,8 +199,8 @@ if __name__ == '__main__':
     TRAIN_RANGE = (0, 384)
     VAL_RANGE = (384, 416)
     
-    TRAIN_RANGE = (0, 6)
-    VAL_RANGE = (384, 416)
+    # TRAIN_RANGE = (0, 6)
+    # VAL_RANGE = (384, 416)
 
     traingen = Torch3DDataset(DATASET_DIR, TABLE, 1, shuffle=True, imgnrs=range(*TRAIN_RANGE))
     traingen2 = Torch3DDataset(DATASET_DIR, TABLE, 1, shuffle=True, imgnrs=range(*TRAIN_RANGE))
@@ -220,7 +223,7 @@ if __name__ == '__main__':
     )
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
-    optimizer.param_groups[0]['lr'] = 1e-6
+    optimizer.param_groups[0]['lr'] = 1e-7
     weight_dict = {'loss_ce': 1, 'loss_bbox': 1 , 'loss_giou': 1, 'loss_smooth':1}
     losses = ['labels', 'boxes_smooth_l1']
     matcher = HungarianMatcher(use_giou=False, smooth_l1=False)
@@ -233,7 +236,7 @@ if __name__ == '__main__':
         model,
         criterion,
         optimizer,
-        n_epochs=20000,
+        n_epochs=2000,
         device=device,
         save_best=True,
         validate=True
