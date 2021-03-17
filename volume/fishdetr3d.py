@@ -140,7 +140,7 @@ class DecoderBlock(nn.Module):
         h2 = self.bn2(self.relu(self.conv2(h1)))
         h3 = self.bn3(self.relu(self.conv3(h2 + h1)))  # Skip connection
         return h3
-
+        
 
 class Decoder(nn.Module):
     def __init__(self, num_classes, hidden_dim: int = 256, merge_hidden_dim: int = 128):
@@ -166,25 +166,21 @@ class Decoder(nn.Module):
             in_channels=merge_hidden_dim, hidden_channels=merge_hidden_dim, out_channels=2
         )
 
-        self.linear_class = nn.Sequential(
-            nn.Linear(in_features=hidden_dim, out_features=hidden_dim * 2),
-            nn.ReLU(inplace=True),
-            nn.Linear(in_features=hidden_dim * 2, out_features=hidden_dim * 2),
-            nn.ReLU(inplace=True),
-            nn.Linear(in_features=hidden_dim * 2, out_features=hidden_dim * 2),
-            nn.ReLU(inplace=True),
-            nn.Linear(in_features=hidden_dim * 2, out_features=num_classes + 1),
-        )
+        def get_decoder_fc(out_features) -> torch.Tensor:
+            return nn.Sequential(
+                nn.Linear(in_features=hidden_dim, out_features=hidden_dim * 2),
+                nn.ReLU(inplace=True),
+                nn.Linear(in_features=hidden_dim * 2, out_features=hidden_dim * 2),
+                nn.ReLU(inplace=True),
+                nn.Linear(in_features=hidden_dim * 2, out_features=hidden_dim * 2),
+                nn.ReLU(inplace=True),
+                nn.Linear(in_features=hidden_dim * 2, out_features=hidden_dim * 2),
+                nn.ReLU(inplace=True),
+                nn.Linear(in_features=hidden_dim * 2, out_features=out_features),
+            )
 
-        self.linear_bbox = nn.Sequential(
-            nn.Linear(in_features=hidden_dim, out_features=hidden_dim * 2),
-            nn.ReLU(inplace=True),
-            nn.Linear(in_features=hidden_dim * 2, out_features=hidden_dim * 2),
-            nn.ReLU(inplace=True),
-            nn.Linear(in_features=hidden_dim * 2, out_features=hidden_dim * 2),
-            nn.ReLU(inplace=True),
-            nn.Linear(in_features=hidden_dim * 2, out_features=9)
-        )
+        self.linear_class = get_decoder_fc(num_classes + 1)
+        self.linear_boxes = get_decoder_fc(9)
 
         # prediction heads, one extra class for predicting non-empty slots
         # note that in baseline DETR linear_bbox layer is 3-layer MLP
@@ -207,20 +203,22 @@ class Decoder(nn.Module):
         """
         h_left: N, C, H, W
         h_right: N, C, H, W
-
-        Output should be
-        {'pred_logits': tensor of shape (N,100,cls)}
-        {'pred_boxes': tensor of shape (N,100,4)}
         """
-        # Output is (N, 2, n_query, n_classes)
-        h = self.merge(h_left, h_right).squeeze(1)
+        h = self.merge(h_left, h_right).squeeze(1) # (N, 2, n_query, hidden_dim (256))
 
+        
+        # Each channel for logits and boxes
+        pred_logits = self.linear_class(h[:, 0, :, :])
+        pred_boxes_intermediate = self.linear_boxes(h[:, 1, :, :]) 
+        # Avoid inplace, cuz autograd anxiety
+        pred_boxes = torch.cat([
+            pred_boxes_intermediate[:,:,(0,1,2)].tanh(),
+            pred_boxes_intermediate[:,:,(3,4,5)],
+            pred_boxes_intermediate[:,:,(6,7,8)].sigmoid()
+        ], dim=2)
+        
         # finally project transformer outputs to class labels and bounding boxes
-        return {
-            # Each channel for logits and boxes
-            "pred_logits": self.linear_class(h[:, 0, :, :]),
-            "pred_boxes": self.linear_bbox(h[:, 1, :, :]).sigmoid(),
-        }
+        return {'pred_logits': pred_logits, 'pred_boxes': pred_boxes}
 
 
 class FishDETR(nn.Module):
