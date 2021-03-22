@@ -80,6 +80,9 @@ class BlenderDatasetBase(Dataset, ABC):
         self.ppargs = ppargs
         self.ppkwargs = ppkwargs
 
+    def __str__(self):
+        return f"{self.__class__.__name__}(\x1b[33mdata=\x1b[m{self.data_dir}, \x1b[33mindex_range=\x1b[m{[min(self.indices), max(self.indices)]})"
+
     def shuffle_indices(self):
         np.random.shuffle(self.indices)
 
@@ -100,7 +103,7 @@ class BlenderDatasetBase(Dataset, ABC):
 
     @abstractmethod
     def get_batch(self, batchnr: int):
-        ...
+        raise NotImplementedError()
 
     def __getitem__(self, batchnr: int):
         # zero indexes, so much stop one iteration before len
@@ -482,6 +485,8 @@ class Torch3DDataset(Blender3DDataset):
             "labels": torch.as_tensor(y_batch[0][0], dtype=torch.long, device=self.device),
             "boxes": torch.as_tensor(y_batch[0][1], dtype=torch.float32, device=self.device),
         }
+
+        assert y_batch['boxes'].shape[1] == 9, "Wrong bbox shape, have you chosen the correct table?"
         return X_batch, y_batch
 
     def plot_batch(self, batchnr: int):
