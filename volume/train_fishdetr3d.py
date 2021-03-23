@@ -1,3 +1,6 @@
+import utils
+seed = 42069
+utils.seed_everything(seed)
 from typing import Generic, Optional, Tuple, List, Callable, Iterable, Mapping
 
 import numpy as np
@@ -7,7 +10,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torchvision.transforms as T
 from torch.utils.data import DataLoader
-import utils
 from utils import debugt, debugs, debug
 from datetime import datetime
 
@@ -25,24 +27,6 @@ from setcriterion import SetCriterion
 import os
 import sqlite3
 
-seed = 42069
-utils.seed_everything(seed)
-
-try:
-    device = utils.pytorch_init_janus_gpu(1)
-    print(f'Using device: {device} ({torch.cuda.get_device_name()})')
-    print(utils.get_cuda_status(device))
-except AssertionError as e:
-    print('GPU could not initialize, got error:', e)
-    device = torch.device('cpu')
-    print('Device is set to CPU')
-
-TORCH_CACHE_DIR = 'torch_cache'
-DATASET_DIR = '/mnt/blendervol/3d_data'
-TABLE = 'bboxes_full'
-WEIGHTS_DIR = 'fish_statedicts_3d'
-torch.hub.set_dir(TORCH_CACHE_DIR)
-num2name = eval(open(os.path.join(DATASET_DIR,"metadata.txt"), 'r').read())
 
 def _validate_model(context: dict, traintqdminfo: dict) -> dict:
     model = context['model']
@@ -79,7 +63,7 @@ def _validate_model(context: dict, traintqdminfo: dict) -> dict:
             valtqdminfo = {**traintqdminfo, 'val loss':val_loss}
             valbar.set_postfix(valtqdminfo)
             
-    return valtqdminfo
+    return valtqdminfo, output, loss, running_val_loss / (i+1)
 
 
 def _train_model(context: dict, epoch: int, n_epochs: int, leave_tqdm: bool) -> Tuple[Iterable, dict]:
@@ -116,7 +100,7 @@ def _train_model(context: dict, epoch: int, n_epochs: int, leave_tqdm: bool) -> 
         traintqdminfo = {'train loss':train_loss}
         trainbar.set_postfix(traintqdminfo)
     
-    return trainbar, traintqdminfo
+    return trainbar, traintqdminfo, output, loss, running_train_loss
 
 
 @utils.interruptable
@@ -146,10 +130,10 @@ def train_model(
     best_val_loss = np.inf
     
     for epoch in range(n_epochs):
-        trainbar, traintqdminfo = _train_model(context, epoch, n_epochs, not validate)
+        trainbar, traintqdminfo, _, _, _ = _train_model(context, epoch, n_epochs, not validate)
             
         if validate:
-            valtqdminfo = _validate_model(context, traintqdminfo)
+            valtqdminfo, _, _, _ = _validate_model(context, traintqdminfo)
         
             # Extra dirty tqdm hack hehe
             # _validate_model will create its own tqdm bar that will replace the bar
@@ -187,28 +171,44 @@ def train_model(
 
 
 if __name__ == '__main__':
+    try:
+        device = utils.pytorch_init_janus_gpu(1)
+        print(f'Using device: {device} ({torch.cuda.get_device_name()})')
+        print(utils.get_cuda_status(device))
+    except AssertionError as e:
+        print('GPU could not initialize, got error:', e)
+        device = torch.device('cpu')
+        print('Device is set to CPU')
+
+    TORCH_CACHE_DIR = 'torch_cache'
+    DATASET_DIR = '/mnt/blendervol/3d_data'
+    TABLE = 'bboxes_full'
+    WEIGHTS_DIR = 'fish_statedicts_3d'
+    torch.hub.set_dir(TORCH_CACHE_DIR)
+    num2name = eval(open(os.path.join(DATASET_DIR,"metadata.txt"), 'r').read())
+
     model = detr.FishDETR().to(device)
-    # model.load_state_dict(torch.load('fish_statedicts_3d/weights_2021-03-17/detr_statedicts_epoch201_train0.0397_val0.0311_2021-03-17T15:18:01.pth')['model_state_dict'])
-    model.load_state_dict(torch.load('last_epoch_detr_3d_shit.pth'))
+    model.load_state_dict(torch.load('fish_statedicts_3d/weights_2021-03-22/detr_statedicts_epoch12_train0.0946_val0.0847_2021-03-22T06:26:56.pth')['model_state_dict'])
+    # model.load_state_dict(torch.load('last_epoch_detr_3d.pth'))
 
     db_con = sqlite3.connect(f'file:{os.path.join(DATASET_DIR,"bboxes.db")}?mode=ro', uri=True)
     print("Getting number of images in database")
     n_data = pd.read_sql_query(f'SELECT COUNT(DISTINCT(imgnr)) FROM {TABLE}', db_con).values[0][0]
 
-    # TRAIN_RANGE = (0, int(9/10*n_data))
-    # VAL_RANGE = (int(9/10*n_data), n_data)
+    TRAIN_RANGE = (0, int(9/10*n_data))
+    VAL_RANGE = (int(9/10*n_data), n_data)
 
     # TRAIN_RANGE = (0, 576)
     # VAL_RANGE = (0, 256)
     
-    TRAIN_RANGE = (0, 6)
+    # TRAIN_RANGE = (0, 6*16)
     # VAL_RANGE = (384, 416)
 
     traingen = Torch3DDataset(DATASET_DIR, TABLE, 1, shuffle=True, imgnrs=range(*TRAIN_RANGE))
-    traingen2 = Torch3DDataset(DATASET_DIR, TABLE, 1, shuffle=False, imgnrs=range(*TRAIN_RANGE))
-    # valgen = Torch3DDataset(DATASET_DIR, TABLE, 1, shuffle=False, imgnrs=range(*VAL_RANGE))
+    # traingen2 = Torch3DDataset(DATASET_DIR, TABLE, 1, shuffle=False, imgnrs=range(*TRAIN_RANGE))
+    valgen = Torch3DDataset(DATASET_DIR, TABLE, 1, shuffle=False, imgnrs=range(*VAL_RANGE))
 
-    BATCH_SIZE = 6
+    BATCH_SIZE = 8
     trainloader = DataLoader(
         dataset = traingen,
         batch_size = BATCH_SIZE,
@@ -218,17 +218,17 @@ if __name__ == '__main__':
     )
 
     valloader = DataLoader(
-        # dataset = valgen,
-        dataset = traingen2,
+        dataset = valgen,
+        # dataset = traingen2,
         batch_size = BATCH_SIZE,
         collate_fn = detr.collate,
         pin_memory = True
     )
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
-    optimizer.param_groups[0]['lr'] = 1e-7
+    optimizer.param_groups[0]['lr'] = 1e-6
     weight_dict = {'loss_ce': 1, 'loss_bbox': 1 , 'loss_giou': 1, 'loss_smooth':1}
-    losses = ['labels', 'boxes_smooth_l1']
+    losses = ['labels', 'boxes_3d']
     matcher = HungarianMatcher(use_giou=False, smooth_l1=False)
     criterion = SetCriterion(6, matcher, weight_dict, eos_coef = 0.5, losses=losses)
     criterion = criterion.to(device)
@@ -239,11 +239,11 @@ if __name__ == '__main__':
         model,
         criterion,
         optimizer,
-        n_epochs=20000,
+        n_epochs=100,
         device=device,
         save_best=True,
         validate=True,
-        check_save_in_interval=500
+        check_save_in_interval=1
     )
 
     utils.save_model(model.state_dict(), "last_epoch_detr_3d.pth")

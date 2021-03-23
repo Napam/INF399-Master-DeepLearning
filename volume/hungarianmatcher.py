@@ -7,7 +7,7 @@ from scipy.optimize import linear_sum_assignment
 import torch.nn.functional as F
 from torch import nn
 
-from utils import box_cxcywh_to_xyxy, debug, debugs, generalized_box_iou
+from utils import box_cxcywh_to_xyxy, debug, debugs, debugt, generalized_box_iou
 
 
 class HungarianMatcher(nn.Module):
@@ -25,7 +25,8 @@ class HungarianMatcher(nn.Module):
         cost_giou: float = 1,
         *,
         use_giou: bool = True,
-        smooth_l1: bool = False
+        smooth_l1: bool = False,
+        cdist_p: int = 1
     ):
         """Creates the matcher
 
@@ -44,7 +45,7 @@ class HungarianMatcher(nn.Module):
         if smooth_l1:
             self.regloss = lambda out_bbox, tgt_bbox: F.smooth_l1_loss(out_bbox, tgt_bbox, reduction="none")
         else:
-            self.regloss = lambda out_bbox, tgt_bbox: torch.cdist(out_bbox, tgt_bbox, p=1)
+            self.regloss = lambda out_bbox, tgt_bbox: torch.cdist(out_bbox, tgt_bbox, p=cdist_p)
             
 
     @torch.no_grad()
@@ -86,7 +87,10 @@ class HungarianMatcher(nn.Module):
         cost_class = -out_prob[:, tgt_ids]
 
         # Compute the regression (L1 or smooth L1) cost between boxes
+        # debugs(tgt_bbox)
+        # debugs(out_bbox)
         cost_bbox = self.regloss(out_bbox, tgt_bbox)
+        # debugs(cost_bbox)
 
         # Final cost matrix
         C = self.cost_bbox * cost_bbox + self.cost_class * cost_class 

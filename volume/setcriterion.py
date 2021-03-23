@@ -81,17 +81,16 @@ class SetCriterion(nn.Module):
         losses["loss_giou"] = loss_giou.sum() / num_boxes
         return losses
 
-    def loss_boxes_smooth_l1(self, outputs, targets, indices, num_boxes):
-        """Compute the losses related to the bounding boxes, the L1 regression loss and the GIoU loss
-        targets dicts must contain the key "boxes" containing a tensor of dim [nb_target_boxes, 4]
-        The target boxes are expected in format (center_x, center_y, w, h), normalized by the image size.
-        """
+    def loss_boxes_3d(self, outputs, targets, indices, num_boxes):
         assert "pred_boxes" in outputs
         idx = self._get_src_permutation_idx(indices)
         src_boxes = outputs["pred_boxes"][idx]
         target_boxes = torch.cat([t["boxes"][i] for t, (_, i) in zip(targets, indices)], dim=0)
-
-        losses = {'loss_smooth': F.smooth_l1_loss(src_boxes, target_boxes)}
+        
+        loss_loc = F.mse_loss(src_boxes[:,[0,1,2]], target_boxes[:,[0,1,2]])
+        loss_size = F.mse_loss(src_boxes[:,[3,4,5]], target_boxes[:,[3,4,5]])
+        loss_rot = F.mse_loss(src_boxes[:,[6,7,8]], target_boxes[:,[6,7,8]])
+        losses = {'loss_smooth': loss_loc + loss_size + loss_rot}
         return losses
 
     def _get_src_permutation_idx(self, indices):
@@ -110,7 +109,7 @@ class SetCriterion(nn.Module):
         loss_map = {
             "labels": self.loss_labels,
             "boxes": self.loss_boxes,
-            "boxes_smooth_l1": self.loss_boxes_smooth_l1
+            "boxes_3d": self.loss_boxes_3d
         }
         assert loss in loss_map, f"do you really want to compute {loss} loss?"
         return loss_map[loss](outputs, targets, indices, num_boxes, **kwargs)
@@ -146,49 +145,51 @@ if __name__ == "__main__":
     from pprint import pprint
     from hungarianmatcher import HungarianMatcher
 
-    dummy_output = {'pred_logits':torch.tensor([
-        [[10, 10, 10, 10, 10, 50],
-         [10, 10, 10, 10, 10, 50],
-         [50, 10, 10, 10, 10, 10],
-         [50, 10, 10, 10, 10, 10]],
+    dummy_output = {
+        'pred_logits':torch.tensor([
+            [[10, 10, 10, 10, 10, 50],
+             [10, 10, 10, 10, 10, 50],
+             [50, 10, 10, 10, 10, 10],
+             [50, 10, 10, 10, 10, 10]],
 
-        [[10, 50, 10, 10, 10, 10],
-         [10, 50, 10, 10, 10, 10],
-         [10, 10, 10, 10, 10, 50],
-         [10, 10, 10, 10, 10, 50]],
-    ]).to(torch.float32),
-     'pred_boxes':torch.tensor([
-         [[0.5, 0.5, 0.2, 0.2, 0.2, 0.2],
-          [0.5, 0.5, 0.2, 0.2, 0.2, 0.2],
-          [0.5, 0.5, 0.2, 0.2, 0.2, 0.2],
-          [0.5, 0.5, 0.2, 0.2, 0.2, 0.2]],
+            [[50, 10, 10, 10, 10, 10],
+             [50, 10, 10, 10, 10, 10],
+             [10, 10, 10, 10, 10, 50],
+             [10, 10, 10, 10, 10, 50]],
+        ]).to(torch.float32),
+        'pred_boxes':torch.tensor([
+            [[0.5, 0.5, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2],
+             [0.5, 0.5, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2],
+             [0.5, 0.5, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2],
+             [0.5, 0.5, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2]],
 
-         [[0.5, 0.5, 0.2, 0.2, 0.2, 0.2],
-          [0.5, 0.5, 0.2, 0.2, 0.2, 0.2],
-          [0.5, 0.5, 0.2, 0.2, 0.2, 0.2],
-          [0.5, 0.5, 0.2, 0.2, 0.2, 0.2]]
-     ])}
+            [[0.5, 0.5, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2],
+             [0.5, 0.5, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2],
+             [0.5, 0.5, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2],
+             [0.5, 0.5, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2]]
+        ]).to(torch.float32)
+     }
     
     dummy_target = y = [
         {'labels':torch.tensor([5,5,0,0]),
          'boxes':torch.tensor([
-             [0.5, 0.5, 0.2, 0.2, 0.2, 0.2],
-             [0.5, 0.5, 0.2, 0.2, 0.2, 0.2],
-             [0.5, 0.5, 0.2, 0.2, 0.2, 0.2],
-             [0.5, 0.5, 0.2, 0.2, 0.2, 0.2]])
+             [0.5, 0.5, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2],
+             [0.5, 0.5, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2],
+             [0.5, 0.5, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2],
+             [0.5, 0.5, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2]])
         },
         {'labels':torch.tensor([1,1,5,5]),
          'boxes':torch.tensor([
-             [0.5, 0.5, 0.2, 0.2, 0.2, 0.2],
-             [0.5, 0.5, 0.2, 0.2, 0.2, 0.2],
-             [0.5, 0.5, 0.2, 0.2, 0.2, 0.2],
-             [0.5, 0.5, 0.2, 0.2, 0.2, 0.2]])
+             [0.5, 0.5, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2],
+             [0.5, 0.5, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2],
+             [0.5, 0.5, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2],
+             [0.5, 0.5, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2]])
         }
     ]
 
     weight_dict = {'loss_ce': 1, 'loss_bbox': 1 , 'loss_giou': 1, 'loss_smooth':1}
-    losses = ['labels', 'boxes_smooth_l1']
-    matcher = HungarianMatcher(use_giou=False, smooth_l1=True)
+    losses = ['labels', 'boxes_3d']
+    matcher = HungarianMatcher(use_giou=False, smooth_l1=False)
     criterion = SetCriterion(5, matcher, weight_dict, eos_coef = 0.5, losses=losses)
     loss = criterion(dummy_output, dummy_target)
     debug(loss)
