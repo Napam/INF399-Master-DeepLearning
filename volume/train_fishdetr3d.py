@@ -129,7 +129,8 @@ def train_model(
         n_epochs: int, 
         device: torch.device, 
         validate: bool = True,
-        save_best: bool = True
+        save_best: bool = True,
+        check_save_in_interval: int = 1
     ):
     
     # for convenience
@@ -172,39 +173,40 @@ def train_model(
                     )
                     filepath = os.path.join(WEIGHTS_DIR, daydir, filename)
 
-                    # Save sparsely
-                    # REMEMBER TO REMOVE THIS LATER!!!!!
-                    # if not epoch % 50:
-                    utils.save_model(
-                        obj={
-                            'model_state_dict':model.state_dict(),
-                            'optimizer':optimizer.state_dict(),
-                            'criterion':criterion.state_dict(),
-                        },
-                        f = filepath
-                    )
+                    # Save sparsely if needed
+                    if not epoch % check_save_in_interval:
+                        utils.save_model(
+                            obj={
+                                'model_state_dict':model.state_dict(),
+                                'optimizer':optimizer.state_dict(),
+                                'criterion':criterion.state_dict(),
+                            },
+                            f = filepath
+                        )
+                        print(f"\nSaved model: {filepath}\n")
 
 
 if __name__ == '__main__':
     model = detr.FishDETR().to(device)
     # model.load_state_dict(torch.load('fish_statedicts_3d/weights_2021-03-17/detr_statedicts_epoch201_train0.0397_val0.0311_2021-03-17T15:18:01.pth')['model_state_dict'])
+    model.load_state_dict(torch.load('last_epoch_detr_3d_shit.pth'))
 
     db_con = sqlite3.connect(f'file:{os.path.join(DATASET_DIR,"bboxes.db")}?mode=ro', uri=True)
     print("Getting number of images in database")
     n_data = pd.read_sql_query(f'SELECT COUNT(DISTINCT(imgnr)) FROM {TABLE}', db_con).values[0][0]
 
-    TRAIN_RANGE = (0, int(9/10*n_data))
-    VAL_RANGE = (int(9/10*n_data), n_data)
+    # TRAIN_RANGE = (0, int(9/10*n_data))
+    # VAL_RANGE = (int(9/10*n_data), n_data)
 
     # TRAIN_RANGE = (0, 576)
     # VAL_RANGE = (0, 256)
     
-    # TRAIN_RANGE = (0, 6)
+    TRAIN_RANGE = (0, 6)
     # VAL_RANGE = (384, 416)
 
     traingen = Torch3DDataset(DATASET_DIR, TABLE, 1, shuffle=True, imgnrs=range(*TRAIN_RANGE))
-    # traingen2 = Torch3DDataset(DATASET_DIR, TABLE, 1, shuffle=True, imgnrs=range(*TRAIN_RANGE))
-    valgen = Torch3DDataset(DATASET_DIR, TABLE, 1, shuffle=False, imgnrs=range(*VAL_RANGE))
+    traingen2 = Torch3DDataset(DATASET_DIR, TABLE, 1, shuffle=False, imgnrs=range(*TRAIN_RANGE))
+    # valgen = Torch3DDataset(DATASET_DIR, TABLE, 1, shuffle=False, imgnrs=range(*VAL_RANGE))
 
     BATCH_SIZE = 6
     trainloader = DataLoader(
@@ -216,14 +218,15 @@ if __name__ == '__main__':
     )
 
     valloader = DataLoader(
-        dataset = valgen,
+        # dataset = valgen,
+        dataset = traingen2,
         batch_size = BATCH_SIZE,
         collate_fn = detr.collate,
         pin_memory = True
     )
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
-    optimizer.param_groups[0]['lr'] = 1e-5
+    optimizer.param_groups[0]['lr'] = 1e-7
     weight_dict = {'loss_ce': 1, 'loss_bbox': 1 , 'loss_giou': 1, 'loss_smooth':1}
     losses = ['labels', 'boxes_smooth_l1']
     matcher = HungarianMatcher(use_giou=False, smooth_l1=False)
@@ -236,10 +239,11 @@ if __name__ == '__main__':
         model,
         criterion,
         optimizer,
-        n_epochs=100,
+        n_epochs=20000,
         device=device,
         save_best=True,
-        validate=True
+        validate=True,
+        check_save_in_interval=500
     )
 
     utils.save_model(model.state_dict(), "last_epoch_detr_3d.pth")

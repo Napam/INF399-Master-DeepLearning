@@ -1,6 +1,8 @@
-from typing import Callable, Dict, Iterable, List, Optional, Tuple
+from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
 import numpy as np
+import pandas as pd 
+import itertools
 from numpy.typing import ArrayLike
 from torchvision.models import resnet50
 import torch
@@ -359,8 +361,28 @@ class FishDETR(nn.Module):
             plot_output(imgs, output, **kwargs)
 
 
+def postprocess_to_df(imgnrs: Sequence[int], output: DETROutput, thresh: float = 0.2):
+    '''
+    To use with Blender reconstruction script
+    '''
+    classes_list, boxes_list = postprocess(output, thresh, to_numpy=True)
+    assert len(imgnrs) == len(classes_list) == len(boxes_list), "imgnrs, classes or boxes length mismatch"
+    
+    classes = itertools.chain.from_iterable(classes_list)
+    boxes = itertools.chain.from_iterable(boxes_list)
+    imgnrs_repeated = itertools.chain.from_iterable((
+        (imgnr,)*len(classes_) for imgnr, classes_ in zip(imgnrs, classes_list))
+    )
+    
+    dict_df = {'class_': classes}
+    for attr, vals in zip(['x', 'y', 'z', 'w', 'l', 'h', 'rx', 'ry', 'rz'], zip(*boxes)):
+        dict_df[attr] = vals
+    
+    return pd.DataFrame(dict_df, index=pd.Index(imgnrs_repeated, name="imgnr"))
+
+
 def postprocess(
-    output: DETROutput, thresh: float = 0.2
+    output: DETROutput, thresh: float = 0.2, to_numpy: bool = False
 ) -> Tuple[List[torch.Tensor], List[torch.Tensor]]:
     logitss = output["pred_logits"]
     boxess = output["pred_boxes"]
@@ -369,8 +391,12 @@ def postprocess(
     boxes_list = []
     for logits, boxes in zip(logitss, boxess):
         class_preds, box_preds = postprocess_sample(logits, boxes, thresh)
-        classes_list.append(class_preds)
-        boxes_list.append(box_preds)
+        if to_numpy:
+            classes_list.append(class_preds.cpu().numpy())
+            boxes_list.append(box_preds.cpu().numpy())
+        else:
+            classes_list.append(class_preds)
+            boxes_list.append(box_preds)
     return classes_list, boxes_list
 
 
