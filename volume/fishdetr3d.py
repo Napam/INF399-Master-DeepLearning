@@ -36,7 +36,7 @@ class Encoder(nn.Module):
 
         # create a default PyTorch transformer
         self.transformer = nn.Transformer(
-            hidden_dim, nheads, num_encoder_layers, num_decoder_layers, dropout=0
+            hidden_dim, nheads, num_encoder_layers, num_decoder_layers, dropout=0.2
         )
 
         # output positional encodings (object queries)

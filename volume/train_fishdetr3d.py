@@ -42,7 +42,8 @@ def _validate_model(context: dict, traintqdminfo: dict) -> dict:
         ascii=True,
         position=0,
         leave=False,
-        file=sys.stdout
+        file=sys.stdout,
+        ncols=90
     )
 
     model.eval()
@@ -80,7 +81,8 @@ def _train_model(context: dict, epoch: int, n_epochs: int, leave_tqdm: bool) -> 
         ascii=True,
         position=0,
         leave=leave_tqdm,
-        file=sys.stdout
+        file=sys.stdout,
+        ncols=90
     )
 
     model.train()
@@ -188,7 +190,7 @@ if __name__ == '__main__':
     num2name = eval(open(os.path.join(DATASET_DIR,"metadata.txt"), 'r').read())
 
     model = detr.FishDETR().to(device)
-    model.load_state_dict(torch.load('fish_statedicts_3d/weights_2021-03-22/detr_statedicts_epoch12_train0.0946_val0.0847_2021-03-22T06:26:56.pth')['model_state_dict'])
+    model.load_state_dict(torch.load('fish_statedicts_3d/weights_2021-03-24/detr_statedicts_epoch10_train0.1340_val0.1522_2021-03-24T04:26:11.pth')['model_state_dict'])
     # model.load_state_dict(torch.load('last_epoch_detr_3d.pth'))
 
     db_con = sqlite3.connect(f'file:{os.path.join(DATASET_DIR,"bboxes.db")}?mode=ro', uri=True)
@@ -226,7 +228,7 @@ if __name__ == '__main__':
     )
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
-    optimizer.param_groups[0]['lr'] = 1e-6
+    optimizer.param_groups[0]['lr'] = 1e-5
     weight_dict = {'loss_ce': 1, 'loss_bbox': 1 , 'loss_giou': 1, 'loss_smooth':1}
     losses = ['labels', 'boxes_3d']
     matcher = HungarianMatcher(use_giou=False, smooth_l1=False)
