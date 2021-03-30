@@ -43,7 +43,7 @@ def _validate_model(context: dict, traintqdminfo: dict) -> dict:
         position=0,
         leave=False,
         file=sys.stdout,
-        ncols=90
+        ncols=100
     )
 
     model.eval()
@@ -82,7 +82,7 @@ def _train_model(context: dict, epoch: int, n_epochs: int, leave_tqdm: bool) -> 
         position=0,
         leave=leave_tqdm,
         file=sys.stdout,
-        ncols=90
+        ncols=100
     )
 
     model.train()
@@ -190,7 +190,7 @@ if __name__ == '__main__':
     num2name = eval(open(os.path.join(DATASET_DIR,"metadata.txt"), 'r').read())
 
     model = detr.FishDETR().to(device)
-    model.load_state_dict(torch.load('fish_statedicts_3d/weights_2021-03-24/detr_statedicts_epoch10_train0.1340_val0.1522_2021-03-24T04:26:11.pth')['model_state_dict'])
+    model.load_state_dict(torch.load('fish_statedicts_3d/weights_2021-03-25/detr_statedicts_epoch13_train0.1328_val0.1285_2021-03-25T08:59:04.pth')['model_state_dict'])
     # model.load_state_dict(torch.load('last_epoch_detr_3d.pth'))
 
     db_con = sqlite3.connect(f'file:{os.path.join(DATASET_DIR,"bboxes.db")}?mode=ro', uri=True)
@@ -241,7 +241,7 @@ if __name__ == '__main__':
         model,
         criterion,
         optimizer,
-        n_epochs=100,
+        n_epochs=20,
         device=device,
         save_best=True,
         validate=True,

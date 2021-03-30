@@ -87,10 +87,13 @@ class SetCriterion(nn.Module):
         src_boxes = outputs["pred_boxes"][idx]
         target_boxes = torch.cat([t["boxes"][i] for t, (_, i) in zip(targets, indices)], dim=0)
         
-        loss_loc = F.mse_loss(src_boxes[:,[0,1,2]], target_boxes[:,[0,1,2]])
-        loss_size = F.mse_loss(src_boxes[:,[3,4,5]], target_boxes[:,[3,4,5]])
-        loss_rot = F.mse_loss(src_boxes[:,[6,7,8]], target_boxes[:,[6,7,8]])
-        losses = {'loss_smooth': loss_loc + loss_size + loss_rot}
+        # loss_loc = F.mse_loss(src_boxes[:,[0,1,2]], target_boxes[:,[0,1,2]])
+        # loss_size = F.mse_loss(src_boxes[:,[3,4,5]], target_boxes[:,[3,4,5]])
+        # loss_rot = F.mse_loss(src_boxes[:,[6,7,8]], target_boxes[:,[6,7,8]])
+        loss_loc = F.smooth_l1_loss(src_boxes[:,[0,1,2]], target_boxes[:,[0,1,2]])
+        loss_size = F.smooth_l1_loss(src_boxes[:,[3,4,5]], target_boxes[:,[3,4,5]])
+        loss_rot = F.smooth_l1_loss(src_boxes[:,[6,7,8]], target_boxes[:,[6,7,8]])
+        losses = {'loss_smooth': loss_loc + loss_size + 2*loss_rot}
         return losses
 
     def _get_src_permutation_idx(self, indices):

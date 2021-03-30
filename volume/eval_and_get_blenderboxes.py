@@ -42,18 +42,15 @@ if __name__ == '__main__':
         print('Device is set to CPU')
 
     TORCH_CACHE_DIR = 'torch_cache'
-    DATASET_DIR = '/mnt/blendervol/3d_data'
-    TABLE = 'bboxes_full'
+    DATASET_DIR = '/mnt/blendervol/3d_data_test'
+    num2name = eval(open(os.path.join(DATASET_DIR,"metadata.txt"), 'r').read())
+    TABLE = "bboxes_full"
     WEIGHTS_DIR = 'fish_statedicts_3d'
     torch.hub.set_dir(TORCH_CACHE_DIR)
-    num2name = eval(open(os.path.join(DATASET_DIR,"metadata.txt"), 'r').read())
 
     model = detr.FishDETR().to(device)
-    # model.load_state_dict(torch.load('fish_statedicts_3d/weights_2021-03-17/detr_statedicts_epoch201_train0.0397_val0.0311_2021-03-17T15:18:01.pth')['model_state_dict'])
-    model.load_state_dict(torch.load('last_epoch_detr_3d.pth'))
-
-    DATASET_DIR = '/mnt/blendervol/3d_data'
-    TABLE = "bboxes_full"
+    model.load_state_dict(torch.load('fish_statedicts_3d/weights_2021-03-25/detr_statedicts_epoch9_train0.1433_val0.1391_2021-03-25T03:58:51.pth')['model_state_dict'])
+    # model.load_state_dict(torch.load('last_epoch_detr_3d.pth'))
 
     datagen_range = (0,8)
     datagen = Torch3DDataset(DATASET_DIR, TABLE, 1, shuffle=False, imgnrs=range(*datagen_range))
