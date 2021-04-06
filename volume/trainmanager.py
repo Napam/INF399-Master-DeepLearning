@@ -206,37 +206,37 @@ def callback_menu(
 
     def add_single_batch_callback(modulename: str, funcname: str):
         """
-        Add \033[32msingle use\033[0m callback after \033[32mbatch\033[0m ends
+        Add single use callback after batch ends
         """
         insert_callback_in_queue(batch_single_clbks, modulename, funcname)
 
     def add_single_epoch_callback(modulename: str, funcname: str):
         """
-        Add \033[32msingle use\033[0m callback after \033[32mepoch\033[0m ends
+        Add single use callback after epoch ends
         """
         insert_callback_in_queue(epoch_single_clbks, modulename, funcname)
 
     def add_persistent_batch_callback(modulename: str, funcname: str):
         """
-        Add \033[32mpersistent\033[0m callback after \033[32mbatch\033[0m ends
+        Add persistent callback after batch ends
         """
         insert_callback_in_queue(batch_persist_clbks, modulename, funcname)
 
     def add_persistent_epoch_callback(modulename: str, funcname: str):
         """
-        Add \033[32mpersistent\033[0m callback after \033[32mepoch\033[0m ends
+        Add persistent callback after epoch ends
         """
         insert_callback_in_queue(epoch_persist_clbks, modulename, funcname)
 
     def delete_persistent_batch_callback():
         """
-        \033[31mDelete\033[0m \033[32mpersistent\033[0m callback after \033[32mbatch\033[0m ends
+        Delete persistent callback after batch ends
         """
         delete_callback_in_queue(batch_persist_clbks)
 
     def delete_persistent_epoch_callback():
         """
-        \033[31mDelete\033[0m \033[32mpersistent\033[0m callback after \033[32mepoch\033[0m ends
+        Delete persistent callback after epoch ends
         """
         delete_callback_in_queue(epoch_persist_clbks)
 
