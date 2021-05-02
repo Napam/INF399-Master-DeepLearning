@@ -190,12 +190,13 @@ if __name__ == '__main__':
     num2name = eval(open(os.path.join(DATASET_DIR,"metadata.txt"), 'r').read())
 
     model = detr.FishDETR().to(device)
-    #model.load_state_dict(torch.load('fish_statedicts_3d/weights_2021-03-25/detr_statedicts_epoch13_train0.1328_val0.1285_2021-03-25T08:59:04.pth')['model_state_dict'])
-    model.load_state_dict(torch.load('last_epoch_detr_3d.pth'))
+    #model.load_state_dict(torch.load('fish_statedicts_3d/weights_2021-04-27/detr_statedicts_epoch1_train0.1042_val0.1073_2021-04-27T10:08:21.pth')['model_state_dict'])
+    model.load_state_dict(torch.load('last_epoch_detr_3d_overfit_train0.0274.pth'))
 
     db_con = sqlite3.connect(f'file:{os.path.join(DATASET_DIR,"bboxes.db")}?mode=ro', uri=True)
-    print("Getting number of images in database")
+    print("Getting number of images in database: ", end="")
     n_data = pd.read_sql_query(f'SELECT COUNT(DISTINCT(imgnr)) FROM {TABLE}', db_con).values[0][0]
+    print(n_data)
 
     TRAIN_RANGE = (0, int(4/10*n_data))
     #VAL_RANGE = (int(5/10*n_data), n_data)
@@ -206,6 +207,9 @@ if __name__ == '__main__':
     
     # TRAIN_RANGE = (0, 6*16)
     # VAL_RANGE = (384, 416)
+
+    print(f"TRAIN_RANGE: {TRAIN_RANGE}")
+    print(f"VAL_RANGE: {VAL_RANGE}")
 
     traingen = Torch3DDataset(DATASET_DIR, TABLE, 1, shuffle=True, imgnrs=range(*TRAIN_RANGE))
     # traingen2 = Torch3DDataset(DATASET_DIR, TABLE, 1, shuffle=False, imgnrs=range(*TRAIN_RANGE))
@@ -228,7 +232,7 @@ if __name__ == '__main__':
         pin_memory = True
     )
 
-    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=0.0001)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=0.00001)
     optimizer.param_groups[0]['lr'] = 5e-6
     weight_dict = {'loss_ce': 1, 'loss_bbox': 1 , 'loss_giou': 1, 'loss_smooth':1}
     losses = ['labels', 'boxes_3d']
@@ -243,11 +247,11 @@ if __name__ == '__main__':
         model,
         criterion,
         optimizer,
-        n_epochs=100,
+        n_epochs=250,
         device=device,
         save_best=True,
         validate=True,
-        check_save_in_interval=1
+        check_save_in_interval=2
     )
 
     utils.save_model(model.state_dict(), "last_epoch_detr_3d_overfit.pth")

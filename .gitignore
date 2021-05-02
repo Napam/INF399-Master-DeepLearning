@@ -9,6 +9,8 @@ nogit*
 
 #vim
 *.swp
+.vim
+.viminfo
 
 # home dir stuff
 .bash_history
