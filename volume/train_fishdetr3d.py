@@ -26,6 +26,7 @@ from hungarianmatcher import HungarianMatcher
 from setcriterion import SetCriterion
 import os
 import sqlite3
+import pathlib
 
 
 def _validate_model(context: dict, traintqdminfo: dict) -> dict:
@@ -105,6 +106,32 @@ def _train_model(context: dict, epoch: int, n_epochs: int, leave_tqdm: bool) -> 
     return trainbar, traintqdminfo, output, loss, running_train_loss
 
 
+def _create_loss_csv(weights_dir: str, validate: bool):
+    isodatestart = datetime.now().strftime("%Y-%m-%dT%Hh%Mm%Ss")
+    rundir = f"trainsession_{isodatestart}"
+    daydir = datetime.today().strftime("weights_%Y-%m-%d")
+    pathlib.Path(os.path.join(weights_dir, daydir, rundir)).mkdir(parents=True, exist_ok=True)
+    csvpath = os.path.join(weights_dir, daydir, rundir, "losses.csv")
+    with open(csvpath, "w+") as f:
+        f.write("epoch,train")
+        if validate:
+            f.write(",val")
+        f.write("\n")
+    return rundir, csvpath, daydir
+
+def _create_session_metadata(dir_: str, context: dict):
+    metadatapath = os.path.join(dir_, "metadata.txt")
+    # exit(context['device'])
+    with open(metadatapath, "w+") as f:
+        f.write(
+            "range of train indices:" 
+            f"[{context['trainloader'].dataset.indices.min()},{context['trainloader'].dataset.indices.max()}]\n"
+            "range of val indices:"
+            f"[{context['valloader'].dataset.indices.min()},{context['valloader'].dataset.indices.max()}]\n"
+            f"Optimizer:\n{context['optimizer']}\n"
+        )
+        # f.write(f"Optimizer: {}\n")
+
 @utils.interruptable
 def train_model(
         trainloader: DataLoader, 
@@ -114,9 +141,10 @@ def train_model(
         optimizer, 
         n_epochs: int, 
         device: torch.device, 
+        weights_dir: str,
         validate: bool = True,
         save_best: bool = True,
-        check_save_in_interval: int = 1
+        check_save_in_interval: int = 1,
     ):
     
     # for convenience
@@ -126,17 +154,23 @@ def train_model(
         'model':model,
         'criterion':criterion,
         'optimizer':optimizer,
-        'device':device
+        'device':device,  
     }
     
+    rundir, csvpath, daydir = _create_loss_csv(weights_dir, validate)
+    _create_session_metadata(os.path.join(weights_dir, daydir, rundir), context)
+
     best_val_loss = np.inf
-    
     for epoch in range(n_epochs):
         trainbar, traintqdminfo, _, _, _ = _train_model(context, epoch, n_epochs, not validate)
-            
+
+        f = open(csvpath, "a+")
+        f.write(f"{epoch+1},{traintqdminfo['train loss']}")
+
         if validate:
             valtqdminfo, _, _, _ = _validate_model(context, traintqdminfo)
-        
+            f.write(f",{valtqdminfo['val loss']}")
+
             # Extra dirty tqdm hack hehe
             # _validate_model will create its own tqdm bar that will replace the bar
             # from _train_model, but will clear itself afterwards
@@ -144,20 +178,20 @@ def train_model(
             trainbar.disable = False
             trainbar.set_postfix({**traintqdminfo, **valtqdminfo})
             trainbar.disable = True
-            print() # for newline
+            print()
         
             # Save best models
             if save_best:
                 if valtqdminfo['val loss'] < best_val_loss:
                     best_val_loss = valtqdminfo['val loss']
-                    isodatenow = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
-                    daydir = datetime.today().strftime("weights_%Y-%m-%d")
+                    isodatenow = datetime.now().strftime("%Y-%m-%dT%Hh%Mm%Ss")
+
                     filename = (
                         f'detr_statedicts_epoch{epoch+1}'
                         f'_train{traintqdminfo["train loss"]:.4f}_val{best_val_loss:.4f}'
                         f'_{isodatenow}.pth'
                     )
-                    filepath = os.path.join(WEIGHTS_DIR, daydir, filename)
+                    filepath = os.path.join(weights_dir, daydir, rundir, filename)
 
                     # Save sparsely if needed
                     if not epoch % check_save_in_interval:
@@ -170,6 +204,9 @@ def train_model(
                             f = filepath
                         )
                         print(f"\nSaved model: {filepath}\n")
+        f.write("\n")
+        f.close()
+    return context
 
 
 if __name__ == '__main__':
@@ -189,18 +226,20 @@ if __name__ == '__main__':
     torch.hub.set_dir(TORCH_CACHE_DIR)
     num2name = eval(open(os.path.join(DATASET_DIR,"metadata.txt"), 'r').read())
 
-    model = detr.FishDETR().to(device)
-    #model.load_state_dict(torch.load('fish_statedicts_3d/weights_2021-04-27/detr_statedicts_epoch1_train0.1042_val0.1073_2021-04-27T10:08:21.pth')['model_state_dict'])
-    model.load_state_dict(torch.load('last_epoch_detr_3d_overfit_train0.0274.pth'))
+    modelpath = os.path.join(
+        WEIGHTS_DIR,
+        "weights_2021-05-06",
+        "trainsession_2021-05-06T17h52m35s",
+        "detr_statedicts_epoch9_train0.0778_val0.0829_2021-05-07T00h59m25s.pth"
+    )
 
     db_con = sqlite3.connect(f'file:{os.path.join(DATASET_DIR,"bboxes.db")}?mode=ro', uri=True)
     print("Getting number of images in database: ", end="")
     n_data = pd.read_sql_query(f'SELECT COUNT(DISTINCT(imgnr)) FROM {TABLE}', db_con).values[0][0]
     print(n_data)
 
-    TRAIN_RANGE = (0, int(4/10*n_data))
-    #VAL_RANGE = (int(5/10*n_data), n_data)
-    VAL_RANGE = (int(5/10*n_data), int(6/10*n_data))
+    TRAIN_RANGE = (0, int(9/10*n_data))
+    VAL_RANGE = (int(9/10*n_data), int(10/10*n_data))
 
     # TRAIN_RANGE = (0, 576)
     # VAL_RANGE = (0, 256)
@@ -232,6 +271,10 @@ if __name__ == '__main__':
         pin_memory = True
     )
 
+    loaded_weights = torch.load(modelpath)
+    model = detr.FishDETR().to(device)
+    model.load_state_dict(loaded_weights['model_state_dict'])
+
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=0.00001)
     optimizer.param_groups[0]['lr'] = 5e-6
     weight_dict = {'loss_ce': 1, 'loss_bbox': 1 , 'loss_giou': 1, 'loss_smooth':1}
@@ -240,6 +283,13 @@ if __name__ == '__main__':
     criterion = SetCriterion(6, matcher, weight_dict, eos_coef = 0.5, losses=losses)
     criterion = criterion.to(device)
 
+    optimizer.load_state_dict(loaded_weights['optimizer'])
+    criterion.load_state_dict(loaded_weights['criterion'])
+    print('Optimizer and criterion successfully loaded with stored buffers')
+
+    # Will crash if I don't do this
+    del loaded_weights
+
     print(f"LR={optimizer.param_groups[0]['lr']}")
     train_model(
         trainloader,
@@ -247,12 +297,23 @@ if __name__ == '__main__':
         model,
         criterion,
         optimizer,
-        n_epochs=250,
+        n_epochs=64,
         device=device,
-        save_best=True,
+        save_best=False,
         validate=True,
-        check_save_in_interval=2
+        check_save_in_interval=1,
+        weights_dir=WEIGHTS_DIR
     )
 
-    utils.save_model(model.state_dict(), "last_epoch_detr_3d_overfit.pth")
-    
+    # exit()
+    # utils.save_model(model.state_dict(), "last_epoch_detr_3d_overfit.pth")
+    # filepath = "last_epoch_detr_3d_overfit.pth"
+    # utils.save_model(
+    #     obj={
+    #         'model_state_dict':model.state_dict(),
+    #         'optimizer':optimizer.state_dict(),
+    #         'criterion':criterion.state_dict(),
+    #     },
+    #     f = filepath
+    # )
+    # print(f"\nSaved model: {filepath}\n")
