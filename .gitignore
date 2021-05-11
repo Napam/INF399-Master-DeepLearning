@@ -25,6 +25,7 @@ nogit*
 */models
 *.pth
 
+
 # own jupyter config
 .jupyter
 

@@ -144,6 +144,7 @@ def train_model(
         weights_dir: str,
         validate: bool = True,
         save_best: bool = True,
+        save_last: bool = True,
         check_save_in_interval: int = 1,
     ):
     
@@ -156,6 +157,11 @@ def train_model(
         'optimizer':optimizer,
         'device':device,  
     }
+
+    if not save_best: 
+        print("\x1b[31mRUNNING WITHOUT SAVING BEST MODEL\x1b[0m")
+    if not save_last:
+        print("\x1b[31mRUNNING WITHOUT SAVING LAST MODEL\x1b[0m")
     
     rundir, csvpath, daydir = _create_loss_csv(weights_dir, validate)
     _create_session_metadata(os.path.join(weights_dir, daydir, rundir), context)
@@ -204,10 +210,21 @@ def train_model(
                             f = filepath
                         )
                         print(f"\nSaved model: {filepath}\n")
+
+        filepath = os.path.join(weights_dir, daydir, rundir, "last_epoch.pth")
+        utils.save_model(
+            obj={
+                'model_state_dict':model.state_dict(),
+                'optimizer':optimizer.state_dict(),
+                'criterion':criterion.state_dict()
+            },
+            f = filepath
+        )
+
         f.write("\n")
         f.close()
+    
     return context
-
 
 if __name__ == '__main__':
     try:
@@ -230,8 +247,11 @@ if __name__ == '__main__':
         WEIGHTS_DIR,
         "weights_2021-05-06",
         "trainsession_2021-05-06T17h52m35s",
-        "detr_statedicts_epoch9_train0.0778_val0.0829_2021-05-07T00h59m25s.pth"
+        "detr_statedicts_epoch5_train0.0793_val0.0862_2021-05-06T21h54m37s.pth"
     )
+    # modelpath = os.path.join(
+    #     "last_epoch_detr_3d_overfit.pth"
+    # )
 
     db_con = sqlite3.connect(f'file:{os.path.join(DATASET_DIR,"bboxes.db")}?mode=ro', uri=True)
     print("Getting number of images in database: ", end="")
@@ -244,8 +264,8 @@ if __name__ == '__main__':
     # TRAIN_RANGE = (0, 576)
     # VAL_RANGE = (0, 256)
     
-    # TRAIN_RANGE = (0, 6*16)
-    # VAL_RANGE = (384, 416)
+    # TRAIN_RANGE = (0, 128)
+    # VAL_RANGE = (128, 256)
 
     print(f"TRAIN_RANGE: {TRAIN_RANGE}")
     print(f"VAL_RANGE: {VAL_RANGE}")
@@ -272,10 +292,13 @@ if __name__ == '__main__':
     )
 
     loaded_weights = torch.load(modelpath)
-    model = detr.FishDETR().to(device)
+    model: detr.FishDETR = detr.FishDETR().to(device)
     model.load_state_dict(loaded_weights['model_state_dict'])
 
-    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=0.00001)
+    model.decoder.linear_class = detr.get_decoder_fc(6+1, 256, 1024, 6).to(device)
+    model.decoder.linear_boxes = detr.get_decoder_fc(9, 256, 1024, 6).to(device)
+
+    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=1e-6)
     optimizer.param_groups[0]['lr'] = 5e-6
     weight_dict = {'loss_ce': 1, 'loss_bbox': 1 , 'loss_giou': 1, 'loss_smooth':1}
     losses = ['labels', 'boxes_3d']
@@ -283,8 +306,10 @@ if __name__ == '__main__':
     criterion = SetCriterion(6, matcher, weight_dict, eos_coef = 0.5, losses=losses)
     criterion = criterion.to(device)
 
-    optimizer.load_state_dict(loaded_weights['optimizer'])
-    criterion.load_state_dict(loaded_weights['criterion'])
+    # optimizer.load_state_dict(loaded_weights['optimizer'])
+    # criterion.load_state_dict(loaded_weights['criterion'])
+    optimizer.param_groups[0]['lr'] = 5e-6
+    optimizer.param_groups[0]['weight_decay'] = 1e-7
     print('Optimizer and criterion successfully loaded with stored buffers')
 
     # Will crash if I don't do this
@@ -297,23 +322,23 @@ if __name__ == '__main__':
         model,
         criterion,
         optimizer,
-        n_epochs=64,
+        n_epochs=40,
         device=device,
-        save_best=False,
         validate=True,
+        save_best=True,
+        save_last=True,
         check_save_in_interval=1,
         weights_dir=WEIGHTS_DIR
     )
 
-    # exit()
-    # utils.save_model(model.state_dict(), "last_epoch_detr_3d_overfit.pth")
-    # filepath = "last_epoch_detr_3d_overfit.pth"
-    # utils.save_model(
-    #     obj={
-    #         'model_state_dict':model.state_dict(),
-    #         'optimizer':optimizer.state_dict(),
-    #         'criterion':criterion.state_dict(),
-    #     },
-    #     f = filepath
-    # )
-    # print(f"\nSaved model: {filepath}\n")
+    utils.save_model(model.state_dict(), "last_epoch_detr_3d.pth")
+    filepath = "last_epoch_detr_3d.pth"
+    utils.save_model(
+        obj={
+            'model_state_dict':model.state_dict(),
+            'optimizer':optimizer.state_dict(),
+            'criterion':criterion.state_dict(),
+        },
+        f = filepath
+    )
+    print(f"\nSaved model: {filepath}\n")

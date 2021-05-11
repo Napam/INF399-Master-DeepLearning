@@ -2,7 +2,7 @@ from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
 import numpy as np
 import pandas as pd 
-import itertools
+from itertools import chain
 from numpy.typing import ArrayLike
 from torchvision.models import resnet50
 import torch
@@ -143,6 +143,12 @@ class DecoderBlock(nn.Module):
         h3 = self.bn3(self.relu(self.conv3(h2 + h1)))  # Skip connection
         return h3
         
+def get_decoder_fc(out_features: int, hidden_dim: int, width: int=256, extra_layers: int = 5) -> torch.Tensor:
+    return nn.Sequential(
+        nn.Linear(in_features=hidden_dim, out_features=width), nn.ReLU(inplace=True),
+        *chain.from_iterable((nn.Linear(width, width), nn.ReLU) for i in range(extra_layers)),
+        nn.Linear(in_features=width, out_features=out_features),
+    )
 
 class Decoder(nn.Module):
     def __init__(self, num_classes, hidden_dim: int = 256, merge_hidden_dim: int = 128):
@@ -168,21 +174,8 @@ class Decoder(nn.Module):
             in_channels=merge_hidden_dim, hidden_channels=merge_hidden_dim, out_channels=2
         )
 
-        def get_decoder_fc(out_features) -> torch.Tensor:
-            return nn.Sequential(
-                nn.Linear(in_features=hidden_dim, out_features=hidden_dim * 2),
-                nn.ReLU(inplace=True),
-                nn.Linear(in_features=hidden_dim * 2, out_features=hidden_dim * 2),
-                nn.ReLU(inplace=True),
-                nn.Linear(in_features=hidden_dim * 2, out_features=hidden_dim * 2),
-                nn.ReLU(inplace=True),
-                nn.Linear(in_features=hidden_dim * 2, out_features=hidden_dim * 2),
-                nn.ReLU(inplace=True),
-                nn.Linear(in_features=hidden_dim * 2, out_features=out_features),
-            )
-
-        self.linear_class = get_decoder_fc(num_classes + 1)
-        self.linear_boxes = get_decoder_fc(9)
+        self.linear_class = get_decoder_fc(num_classes + 1, hidden_dim, hidden_dim*2)
+        self.linear_boxes = get_decoder_fc(9, hidden_dim, hidden_dim*2)
 
         # prediction heads, one extra class for predicting non-empty slots
         # note that in baseline DETR linear_bbox layer is 3-layer MLP
@@ -366,11 +359,11 @@ def postprocess_to_df(imgnrs: Sequence[int], output: DETROutput, thresh: float =
     To use with Blender reconstruction script
     '''
     classes_list, boxes_list = postprocess(output, thresh, to_numpy=True)
-    assert len(imgnrs) == len(classes_list) == len(boxes_list), "imgnrs, classes or boxes length mismatch"
+    assert len(classes_list) == len(boxes_list), "classes and boxes length mismatch"
     
-    classes = itertools.chain.from_iterable(classes_list)
-    boxes = itertools.chain.from_iterable(boxes_list)
-    imgnrs_repeated = itertools.chain.from_iterable((
+    classes = chain.from_iterable(classes_list)
+    boxes = chain.from_iterable(boxes_list)
+    imgnrs_repeated = chain.from_iterable((
         (imgnr,)*len(classes_) for imgnr, classes_ in zip(imgnrs, classes_list))
     )
     
