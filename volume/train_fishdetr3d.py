@@ -165,6 +165,7 @@ def train_model(
     
     rundir, csvpath, daydir = _create_loss_csv(weights_dir, validate)
     _create_session_metadata(os.path.join(weights_dir, daydir, rundir), context)
+    fullrundirpath = os.path.join(weights_dir, daydir, rundir)
 
     best_val_loss = np.inf
     for epoch in range(n_epochs):
@@ -190,14 +191,12 @@ def train_model(
             if save_best:
                 if valtqdminfo['val loss'] < best_val_loss:
                     best_val_loss = valtqdminfo['val loss']
-                    isodatenow = datetime.now().strftime("%Y-%m-%dT%Hh%Mm%Ss")
 
                     filename = (
                         f'detr_statedicts_epoch{epoch+1}'
-                        f'_train{traintqdminfo["train loss"]:.4f}_val{best_val_loss:.4f}'
-                        f'_{isodatenow}.pth'
+                        f'_train{traintqdminfo["train loss"]:.4f}_val{best_val_loss:.4f}.pth'
                     )
-                    filepath = os.path.join(weights_dir, daydir, rundir, filename)
+                    filepath = os.path.join(fullrundirpath, filename)
 
                     # Save sparsely if needed
                     if not epoch % check_save_in_interval:
@@ -211,7 +210,7 @@ def train_model(
                         )
                         print(f"\nSaved model: {filepath}\n")
 
-        filepath = os.path.join(weights_dir, daydir, rundir, "last_epoch.pth")
+        filepath = os.path.join(fullrundirpath, "last_epoch.pth")
         utils.save_model(
             obj={
                 'model_state_dict':model.state_dict(),
@@ -223,7 +222,7 @@ def train_model(
 
         f.write("\n")
         f.close()
-    
+
     return context
 
 if __name__ == '__main__':
@@ -245,27 +244,24 @@ if __name__ == '__main__':
 
     modelpath = os.path.join(
         WEIGHTS_DIR,
-        "weights_2021-05-06",
-        "trainsession_2021-05-06T17h52m35s",
-        "detr_statedicts_epoch5_train0.0793_val0.0862_2021-05-06T21h54m37s.pth"
+        "weights_2021-05-12",
+        "trainsession_2021-05-12T17h06m38s",
+        "last_epoch.pth"
     )
-    # modelpath = os.path.join(
-    #     "last_epoch_detr_3d_overfit.pth"
-    # )
-
+    
     db_con = sqlite3.connect(f'file:{os.path.join(DATASET_DIR,"bboxes.db")}?mode=ro', uri=True)
     print("Getting number of images in database: ", end="")
     n_data = pd.read_sql_query(f'SELECT COUNT(DISTINCT(imgnr)) FROM {TABLE}', db_con).values[0][0]
     print(n_data)
 
-    TRAIN_RANGE = (0, int(9/10*n_data))
-    VAL_RANGE = (int(9/10*n_data), int(10/10*n_data))
+    # TRAIN_RANGE = (0, int(9/10*n_data))
+    # VAL_RANGE = (int(9/10*n_data), int(10/10*n_data))
 
     # TRAIN_RANGE = (0, 576)
     # VAL_RANGE = (0, 256)
     
-    # TRAIN_RANGE = (0, 128)
-    # VAL_RANGE = (128, 256)
+    TRAIN_RANGE = (0, 20000)
+    VAL_RANGE = (49000,50000)
 
     print(f"TRAIN_RANGE: {TRAIN_RANGE}")
     print(f"VAL_RANGE: {VAL_RANGE}")
@@ -295,8 +291,8 @@ if __name__ == '__main__':
     model: detr.FishDETR = detr.FishDETR().to(device)
     model.load_state_dict(loaded_weights['model_state_dict'])
 
-    model.decoder.linear_class = detr.get_decoder_fc(6+1, 256, 1024, 6).to(device)
-    model.decoder.linear_boxes = detr.get_decoder_fc(9, 256, 1024, 6).to(device)
+    # model.decoder.linear_class = detr.get_decoder_fc(6+1, 256, 1024, 6).to(device)
+    # model.decoder.linear_boxes = detr.get_decoder_fc(9, 256, 1024, 6).to(device)
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=1e-6)
     optimizer.param_groups[0]['lr'] = 5e-6
@@ -309,8 +305,8 @@ if __name__ == '__main__':
     # optimizer.load_state_dict(loaded_weights['optimizer'])
     # criterion.load_state_dict(loaded_weights['criterion'])
     optimizer.param_groups[0]['lr'] = 5e-6
-    optimizer.param_groups[0]['weight_decay'] = 1e-7
-    print('Optimizer and criterion successfully loaded with stored buffers')
+    optimizer.param_groups[0]['weight_decay'] = 1e-8
+    # print('Optimizer and criterion successfully loaded with stored buffers')
 
     # Will crash if I don't do this
     del loaded_weights
@@ -322,7 +318,7 @@ if __name__ == '__main__':
         model,
         criterion,
         optimizer,
-        n_epochs=40,
+        n_epochs=30,
         device=device,
         validate=True,
         save_best=True,

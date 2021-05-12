@@ -12,6 +12,7 @@ import torchvision.transforms as T
 import utils
 from utils import debug, debugs, debugt
 from matplotlib import pyplot as plt
+from torchvision import transforms
 
 StereoImgs = Tuple[torch.Tensor, torch.Tensor]
 DETROutput = Dict[str, torch.Tensor]
@@ -143,10 +144,10 @@ class DecoderBlock(nn.Module):
         h3 = self.bn3(self.relu(self.conv3(h2 + h1)))  # Skip connection
         return h3
         
-def get_decoder_fc(out_features: int, hidden_dim: int, width: int=256, extra_layers: int = 5) -> torch.Tensor:
+def get_decoder_fc(out_features: int, hidden_dim: int, width: int=256, extra_layers: int=3) -> torch.Tensor:
     return nn.Sequential(
         nn.Linear(in_features=hidden_dim, out_features=width), nn.ReLU(inplace=True),
-        *chain.from_iterable((nn.Linear(width, width), nn.ReLU) for i in range(extra_layers)),
+        *chain.from_iterable((nn.Linear(width, width), nn.ReLU()) for i in range(extra_layers)),
         nn.Linear(in_features=width, out_features=out_features),
     )
 
@@ -174,8 +175,10 @@ class Decoder(nn.Module):
             in_channels=merge_hidden_dim, hidden_channels=merge_hidden_dim, out_channels=2
         )
 
-        self.linear_class = get_decoder_fc(num_classes + 1, hidden_dim, hidden_dim*2)
-        self.linear_boxes = get_decoder_fc(9, hidden_dim, hidden_dim*2)
+        # self.linear_class = get_decoder_fc(num_classes + 1, hidden_dim, 512, 6)
+        # self.linear_boxes = get_decoder_fc(9, 512, 1024, 6)
+        self.linear_class = get_decoder_fc(num_classes + 1, hidden_dim, 1024, 6)
+        self.linear_boxes = get_decoder_fc(9, hidden_dim, 1024, 6)
 
         # prediction heads, one extra class for predicting non-empty slots
         # note that in baseline DETR linear_bbox layer is 3-layer MLP
@@ -243,6 +246,9 @@ class FishDETR(nn.Module):
             print("Encoder layers are frozen")
 
         self.freeze_encoder = freeze_encoder
+        self.transform_imgs = transforms.Compose([
+            transforms.Normalize([0.65629897,0.76457309,0.43896555], [0.06472352, 0.07107777, 0.05759248])
+        ])
 
     @staticmethod
     def freeze_module(module):
@@ -254,8 +260,8 @@ class FishDETR(nn.Module):
         assert isinstance(imgs, (tuple, list))
         assert len(imgs) == 2
 
-        h_left = self.encoder(imgs[0])
-        h_right = self.encoder(imgs[1])
+        h_left = self.encoder(self.transform_imgs(imgs[0]))
+        h_right = self.encoder(self.transform_imgs(imgs[1]))
 
         output = self.decoder(h_left, h_right)
         
