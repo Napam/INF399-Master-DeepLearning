@@ -1,0 +1,11 @@
+range of train indices:[0,19999]
+range of val indices:[49000,49999]
+Optimizer:
+AdamW (
+Parameter Group 0
+    amsgrad: False
+    betas: (0.9, 0.999)
+    eps: 1e-08
+    lr: 5e-06
+    weight_decay: 1e-08
+)

@@ -244,8 +244,8 @@ if __name__ == '__main__':
 
     modelpath = os.path.join(
         WEIGHTS_DIR,
-        "weights_2021-05-12",
-        "trainsession_2021-05-12T17h06m38s",
+        "weights_2021-05-14",
+        "trainsession_2021-05-14T09h49m36s",
         "last_epoch.pth"
     )
     
@@ -260,7 +260,7 @@ if __name__ == '__main__':
     # TRAIN_RANGE = (0, 576)
     # VAL_RANGE = (0, 256)
     
-    TRAIN_RANGE = (0, 20000)
+    TRAIN_RANGE = (0, 49000)
     VAL_RANGE = (49000,50000)
 
     print(f"TRAIN_RANGE: {TRAIN_RANGE}")
@@ -302,11 +302,11 @@ if __name__ == '__main__':
     criterion = SetCriterion(6, matcher, weight_dict, eos_coef = 0.5, losses=losses)
     criterion = criterion.to(device)
 
-    # optimizer.load_state_dict(loaded_weights['optimizer'])
-    # criterion.load_state_dict(loaded_weights['criterion'])
-    optimizer.param_groups[0]['lr'] = 5e-6
-    optimizer.param_groups[0]['weight_decay'] = 1e-8
-    # print('Optimizer and criterion successfully loaded with stored buffers')
+    optimizer.load_state_dict(loaded_weights['optimizer'])
+    criterion.load_state_dict(loaded_weights['criterion'])
+    # optimizer.param_groups[0]['lr'] = 1e-6
+    # optimizer.param_groups[0]['weight_decay'] = 1e-7
+    print('Optimizer and criterion successfully loaded with stored buffers')
 
     # Will crash if I don't do this
     del loaded_weights
@@ -318,7 +318,7 @@ if __name__ == '__main__':
         model,
         criterion,
         optimizer,
-        n_epochs=30,
+        n_epochs=50,
         device=device,
         validate=True,
         save_best=True,

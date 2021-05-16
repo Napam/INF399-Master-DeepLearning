@@ -203,8 +203,7 @@ class Decoder(nn.Module):
         h_right: N, C, H, W
         """
         h = self.merge(h_left, h_right).squeeze(1) # (N, 2, n_query, hidden_dim (256))
-
-        
+    
         # Each channel for logits and boxes
         pred_logits = self.linear_class(h[:, 0, :, :])
         pred_boxes_intermediate = self.linear_boxes(h[:, 1, :, :]) 
