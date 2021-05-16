@@ -119,7 +119,7 @@ def _create_loss_csv(weights_dir: str, validate: bool):
         f.write("\n")
     return rundir, csvpath, daydir
 
-def _create_session_metadata(dir_: str, context: dict):
+def _create_session_metadata(dir_: str, context: dict, notes: str=""):
     metadatapath = os.path.join(dir_, "metadata.txt")
     # exit(context['device'])
     with open(metadatapath, "w+") as f:
@@ -129,6 +129,7 @@ def _create_session_metadata(dir_: str, context: dict):
             "range of val indices:"
             f"[{context['valloader'].dataset.indices.min()},{context['valloader'].dataset.indices.max()}]\n"
             f"Optimizer:\n{context['optimizer']}\n"
+            f"Other notes:\n{notes}"
         )
         # f.write(f"Optimizer: {}\n")
 
@@ -146,6 +147,7 @@ def train_model(
         save_best: bool = True,
         save_last: bool = True,
         check_save_in_interval: int = 1,
+        notes: str = "" 
     ):
     
     # for convenience
@@ -324,7 +326,8 @@ if __name__ == '__main__':
         save_best=True,
         save_last=True,
         check_save_in_interval=1,
-        weights_dir=WEIGHTS_DIR
+        weights_dir=WEIGHTS_DIR,
+        notes=""
     )
 
     utils.save_model(model.state_dict(), "last_epoch_detr_3d.pth")
