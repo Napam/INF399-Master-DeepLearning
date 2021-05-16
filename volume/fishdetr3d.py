@@ -144,10 +144,11 @@ class DecoderBlock(nn.Module):
         h3 = self.bn3(self.relu(self.conv3(h2 + h1)))  # Skip connection
         return h3
         
-def get_decoder_fc(out_features: int, hidden_dim: int, width: int=256, extra_layers: int=3) -> torch.Tensor:
+def get_decoder_fc(in_features: int, out_features: int, width: int=256, extra_layers: int=3) -> torch.Tensor:
+    # n_layers = 2 + extra_layers
     return nn.Sequential(
-        nn.Linear(in_features=hidden_dim, out_features=width), nn.ReLU(inplace=True),
-        *chain.from_iterable((nn.Linear(width, width), nn.ReLU()) for i in range(extra_layers)),
+        nn.Linear(in_features=in_features, out_features=width), nn.ReLU(inplace=True),
+        *chain.from_iterable((nn.Linear(width, width), nn.ReLU(inplace=True)) for i in range(extra_layers)),
         nn.Linear(in_features=width, out_features=out_features),
     )
 
@@ -177,8 +178,8 @@ class Decoder(nn.Module):
 
         # self.linear_class = get_decoder_fc(num_classes + 1, hidden_dim, 512, 6)
         # self.linear_boxes = get_decoder_fc(9, 512, 1024, 6)
-        self.linear_class = get_decoder_fc(num_classes + 1, hidden_dim, 1024, 6)
-        self.linear_boxes = get_decoder_fc(9, hidden_dim, 1024, 6)
+        self.linear_class = get_decoder_fc(hidden_dim, num_classes + 1, 1024, 6) # 8 layers
+        self.linear_boxes = get_decoder_fc(hidden_dim, 9, 1024, 6) # 8 layers
 
         # prediction heads, one extra class for predicting non-empty slots
         # note that in baseline DETR linear_bbox layer is 3-layer MLP
