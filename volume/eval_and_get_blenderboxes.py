@@ -50,13 +50,14 @@ if __name__ == '__main__':
 
     modelpath = os.path.join(
         WEIGHTS_DIR,
-        "weights_2021-05-09",
-        "trainsession_2021-05-09T22h01m35s",
+        "weights_2021-05-22",
+        "trainsession_2021-05-22T16h41m19s",
         "last_epoch.pth"
     )
 
-    model = detr.FishDETR().to(device)
-    model.load_state_dict(torch.load(modelpath)['model_state_dict'])
+    model = detr.FishDETR()
+    model.load_state_dict(torch.load(modelpath, map_location='cpu')['model'])
+    model = model.to(device)
 
     datagen_range = (0,64)
     # datagen_range = (30000,30064)

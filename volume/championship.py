@@ -1,6 +1,7 @@
 from fishdetr3d import FishDETR as FishDETR_first
 from fishdetr3d_alt import FishDETR as FishDETR_alt
 from fishdetr3d_splitfc import FishDETR as FishDETR_split
+from fishdetr3d_sincos import FishDETR as FishDETR_sincos
 from fishdetr3d import collate
 
 import utils
@@ -48,7 +49,7 @@ if __name__ == '__main__':
     TORCH_CACHE_DIR = 'torch_cache'
     DATASET_DIR = '/mnt/blendervol/3d_data'
     TABLE = 'bboxes_full'
-    WEIGHTS_DIR = 'fish_statedicts_3d'
+    WEIGHTS_DIR = 'fish_statedicts'
     torch.hub.set_dir(TORCH_CACHE_DIR)
     num2name = eval(open(os.path.join(DATASET_DIR,"metadata.txt"), 'r').read())
 
@@ -57,11 +58,12 @@ if __name__ == '__main__':
     n_data = pd.read_sql_query(f'SELECT COUNT(DISTINCT(imgnr)) FROM {TABLE}', db_con).values[0][0]
     print(n_data)
 
-    TRAIN_RANGE = (0, 10000)
-    VAL_RANGE = (49000,50000)
+    # TRAIN_RANGE = (0, 25000)
+    TRAIN_RANGE = (0, 15000)
+    VAL_RANGE = (59000,60000)
     
-    TRAIN_RANGE = (0, 8)
-    VAL_RANGE = (49000,49000+8)
+    # TRAIN_RANGE = (0, 64)
+    # VAL_RANGE = (49000,49000+64)
 
     print(f"TRAIN_RANGE: {TRAIN_RANGE}")
     print(f"VAL_RANGE: {VAL_RANGE}")
@@ -89,18 +91,42 @@ if __name__ == '__main__':
 
     models = [FishDETR_first, FishDETR_alt, FishDETR_split]
     notes = [
-        "Regular FishDETR", 
-        "Transformers takes in concatendated ResNet features", 
-        "Split FC"
+        "Sincos", 
     ]
-    for model, note in zip(models, notes):
-        optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=1e-6)
-        optimizer.param_groups[0]['lr'] = 5e-6
+    weightdirs = [
+        "",
+    ]
+    # notes = [
+    #     "Regular FishDETR", 
+    #     "Transformers takes in concatendated ResNet features", 
+    #     "Split FC"
+    # ]
+    # weightdirs = [
+    #     "fish_statedicts/weights_2021-05-16/trainsession_2021-05-16T17h19m11s/last_epoch.pth",
+    #     "fish_statedicts/weights_2021-05-18/trainsession_2021-05-18T01h58m16s/last_epoch.pth",
+    #     "fish_statedicts/weights_2021-05-19/trainsession_2021-05-19T07h30m51s/last_epoch.pth",
+    # ]
+
+    for model, note, weightdir in zip(models, notes, weightdirs):
+        model = model().to(device) # Instantiate
+        
         weight_dict = {'loss_ce': 1, 'loss_bbox': 1 , 'loss_giou': 1, 'loss_smooth':1}
         losses = ['labels', 'boxes_3d']
+        optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=1e-6)
         matcher = HungarianMatcher(use_giou=False, smooth_l1=False)
         criterion = SetCriterion(6, matcher, weight_dict, eos_coef = 0.5, losses=losses)
         criterion = criterion.to(device)
+
+        if weightdir:
+            loaded_weights = torch.load(weightdir, map_location='cpu')
+
+            model.load_state_dict(loaded_weights['model_state_dict'])
+            optimizer.load_state_dict(loaded_weights['optimizer'])
+            criterion.load_state_dict(loaded_weights['criterion'])
+
+            optimizer.param_groups[0]['lr'] = 2.5e-6
+
+            del loaded_weights
 
         train_model(
             trainloader,
@@ -108,7 +134,7 @@ if __name__ == '__main__':
             model,
             criterion,
             optimizer,
-            n_epochs=50,
+            n_epochs=100,
             device=device,
             validate=True,
             save_best=True,

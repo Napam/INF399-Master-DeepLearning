@@ -43,7 +43,12 @@ class HungarianMatcher(nn.Module):
         self.use_giou = use_giou
 
         if smooth_l1:
-            self.regloss = lambda out_bbox, tgt_bbox: F.smooth_l1_loss(out_bbox, tgt_bbox, reduction="none")
+            def naphatloss(out_bbox, tgt_bbox):
+                loss_loc = F.smooth_l1_loss(out_bbox[:,[0,1,2]], tgt_bbox[:,[0,1,2]])
+                loss_dim = F.smooth_l1_loss(out_bbox[:,[3,4,5]], tgt_bbox[:,[3,4,5]])
+                loss_rot = F.smooth_l1_loss(out_bbox[:,6:], tgt_bbox[:,6:])
+                return loss_loc + loss_dim + 2*loss_rot
+            self.regloss = naphatloss
         else:
             self.regloss = lambda out_bbox, tgt_bbox: torch.cdist(out_bbox, tgt_bbox, p=cdist_p)
             

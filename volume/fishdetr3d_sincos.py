@@ -1,4 +1,4 @@
-from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple, Union
 
 import numpy as np
 import pandas as pd 
@@ -183,7 +183,7 @@ class Decoder(nn.Module):
         )
 
         self.linear_class = get_decoder_fc(hidden_dim, num_classes + 1, fc_width, fc_extra_layers) # 8 layers
-        self.linear_boxes = get_decoder_fc(hidden_dim, 9, fc_width, fc_extra_layers) # 8 layers
+        self.linear_boxes = get_decoder_fc(hidden_dim, 6+3*2, fc_width, fc_extra_layers) # 8 layers
 
     def merge(self, h_left, h_right):
         # h_left and h_right: (N, 1, 100, 256)
@@ -208,15 +208,26 @@ class Decoder(nn.Module):
         pred_logits = self.linear_class(h[:, 0, :, :])
         pred_boxes_intermediate = self.linear_boxes(h[:, 1, :, :]) 
         # Avoid inplace, cuz autograd anxiety
+
         pred_boxes = torch.cat([
-            pred_boxes_intermediate[:,:,(0,1,2)].tanh(),
-            pred_boxes_intermediate[:,:,(3,4,5)],
-            pred_boxes_intermediate[:,:,(6,7,8)].sigmoid()
+            pred_boxes_intermediate[:,:,(0,  1,  2)].tanh(),
+            pred_boxes_intermediate[:,:,(3,  4,  5)],
+            pred_boxes_intermediate[:,:,(6,  7,  8)].sin(),
+            pred_boxes_intermediate[:,:,(9, 10, 11)].cos(),
         ], dim=2)
         
         # finally project transformer outputs to class labels and bounding boxes
         return {'pred_logits': pred_logits, 'pred_boxes': pred_boxes}
 
+def normalize_rotations(rots: Union[np.ndarray, float]):
+    """
+    Normalize rotations, R -> [0, 1]
+    """
+    # Normalize then modulo
+    # Rotations will become between [0, 1], where 0 is zero radians
+    # and 1 is 2 pi radians
+    # Python modulo: -0.75 % 1 -> 0.25
+    return (rots / (2 * np.pi)) % 1
 
 class FishDETR(nn.Module):
     """
@@ -303,6 +314,12 @@ class FishDETR(nn.Module):
             criterion.train()
 
         output = self(X)
+        
+        for tgt in y:
+            boxes = tgt['boxes']
+            boxes = torch.cat([boxes[:,:6], boxes[:,6:].sin(), boxes[:,6:].cos()], axis=1)
+            tgt['boxes'] = boxes
+
         loss_dict = criterion(output, y)
         weight_dict = criterion.weight_dict
         losses: torch.Tensor
@@ -324,6 +341,11 @@ class FishDETR(nn.Module):
         if enforce_eval:
             self.eval()
             criterion.eval()
+
+        for tgt in y:
+            boxes = tgt['boxes']
+            boxes = torch.cat([boxes[:,:6], boxes[:,6:].sin(), boxes[:,6:].cos()], axis=1)
+            tgt['boxes'] = boxes
 
         output = self(X)
         loss_dict = criterion(output, y)
@@ -418,8 +440,11 @@ def postprocess_sample(
 
     if any(keepmask) == False:
         return torch.Tensor(), torch.Tensor(), torch.Tensor()
-
-    return confidences[keepmask], logits[keepmask].argmax(-1), boxes[keepmask]
+    
+    # sincos encoding to raw radian angles
+    boxes = boxes[keepmask]
+    boxes = torch.column_stack([boxes[:,:6], torch.atan2(boxes[:,[6,7,8]], boxes[:,[9,10,11]])])
+    return confidences[keepmask], logits[keepmask].argmax(-1), 
 
 
 def preprocess(X: StereoImgs, y: DETROutput, device: torch.device) -> Tuple[StereoImgs, DETROutput]:
@@ -503,8 +528,7 @@ if __name__ == "__main__":
         output = model(X)
         debugs(output['pred_logits'])
         debugs(output['pred_boxes'])
-        debug(postprocess_to_df([0,1,2,3],output,0.145))
-        # cls, bx = postprocess(output, 0.15)
+        confs, cls, bx = postprocess(output, 0.15)
         
 
     # lol = set()

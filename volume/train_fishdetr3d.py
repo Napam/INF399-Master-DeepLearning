@@ -13,7 +13,7 @@ from torch.utils.data import DataLoader
 from utils import debugt, debugs, debug
 from datetime import datetime
 
-import fishdetr3d as detr
+import fishdetr3d_sincos as detr
 # import detr_batchboy_regular as detr
 from generators import Torch3DDataset
 from tqdm import tqdm
@@ -166,7 +166,7 @@ def train_model(
         print("\x1b[31mRUNNING WITHOUT SAVING LAST MODEL\x1b[0m")
     
     rundir, csvpath, daydir = _create_loss_csv(weights_dir, validate)
-    _create_session_metadata(os.path.join(weights_dir, daydir, rundir), context)
+    _create_session_metadata(os.path.join(weights_dir, daydir, rundir), context, notes)
     fullrundirpath = os.path.join(weights_dir, daydir, rundir)
 
     best_val_loss = np.inf
@@ -215,7 +215,7 @@ def train_model(
         filepath = os.path.join(fullrundirpath, "last_epoch.pth")
         utils.save_model(
             obj={
-                'model_state_dict':model.state_dict(),
+                'model':model.state_dict(), # Key was 'model_state_dict' before
                 'optimizer':optimizer.state_dict(),
                 'criterion':criterion.state_dict()
             },
@@ -229,7 +229,7 @@ def train_model(
 
 if __name__ == '__main__':
     try:
-        device = utils.pytorch_init_janus_gpu(1)
+        device = utils.pytorch_init_janus_gpu(0)
         print(f'Using device: {device} ({torch.cuda.get_device_name()})')
         print(utils.get_cuda_status(device))
     except AssertionError as e:
@@ -240,14 +240,14 @@ if __name__ == '__main__':
     TORCH_CACHE_DIR = 'torch_cache'
     DATASET_DIR = '/mnt/blendervol/3d_data'
     TABLE = 'bboxes_full'
-    WEIGHTS_DIR = 'fish_statedicts_3d'
+    WEIGHTS_DIR = 'fish_statedicts'
     torch.hub.set_dir(TORCH_CACHE_DIR)
     num2name = eval(open(os.path.join(DATASET_DIR,"metadata.txt"), 'r').read())
 
     modelpath = os.path.join(
         WEIGHTS_DIR,
-        "weights_2021-05-14",
-        "trainsession_2021-05-14T09h49m36s",
+        "weights_2021-05-22",
+        "trainsession_2021-05-22T09h48m01s",
         "last_epoch.pth"
     )
     
@@ -259,11 +259,11 @@ if __name__ == '__main__':
     # TRAIN_RANGE = (0, int(9/10*n_data))
     # VAL_RANGE = (int(9/10*n_data), int(10/10*n_data))
 
-    # TRAIN_RANGE = (0, 576)
-    # VAL_RANGE = (0, 256)
+    TRAIN_RANGE = (0, 128)
+    VAL_RANGE = (128, 256)
     
-    TRAIN_RANGE = (0, 49000)
-    VAL_RANGE = (49000,50000)
+    # TRAIN_RANGE = (0, 49000)
+    # VAL_RANGE = (49000,50000)
 
     print(f"TRAIN_RANGE: {TRAIN_RANGE}")
     print(f"VAL_RANGE: {VAL_RANGE}")
@@ -289,29 +289,26 @@ if __name__ == '__main__':
         pin_memory = True
     )
 
-    loaded_weights = torch.load(modelpath)
+    # loaded_weights = torch.load(modelpath, map_location='cpu')
     model: detr.FishDETR = detr.FishDETR().to(device)
-    model.load_state_dict(loaded_weights['model_state_dict'])
-
-    # model.decoder.linear_class = detr.get_decoder_fc(6+1, 256, 1024, 6).to(device)
-    # model.decoder.linear_boxes = detr.get_decoder_fc(9, 256, 1024, 6).to(device)
+    # model.load_state_dict(loaded_weights['model'])
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=1e-6)
-    optimizer.param_groups[0]['lr'] = 5e-6
+    optimizer.param_groups[0]['lr'] = 1e-5
     weight_dict = {'loss_ce': 1, 'loss_bbox': 1 , 'loss_giou': 1, 'loss_smooth':1}
     losses = ['labels', 'boxes_3d']
     matcher = HungarianMatcher(use_giou=False, smooth_l1=False)
     criterion = SetCriterion(6, matcher, weight_dict, eos_coef = 0.5, losses=losses)
     criterion = criterion.to(device)
 
-    optimizer.load_state_dict(loaded_weights['optimizer'])
-    criterion.load_state_dict(loaded_weights['criterion'])
+    # optimizer.load_state_dict(loaded_weights['optimizer'])
+    # criterion.load_state_dict(loaded_weights['criterion'])
     # optimizer.param_groups[0]['lr'] = 1e-6
     # optimizer.param_groups[0]['weight_decay'] = 1e-7
-    print('Optimizer and criterion successfully loaded with stored buffers')
+    # print('Optimizer and criterion successfully loaded with stored buffers')
 
     # Will crash if I don't do this
-    del loaded_weights
+    # del loaded_weights
 
     print(f"LR={optimizer.param_groups[0]['lr']}")
     train_model(
@@ -320,14 +317,14 @@ if __name__ == '__main__':
         model,
         criterion,
         optimizer,
-        n_epochs=50,
+        n_epochs=2,
         device=device,
         validate=True,
         save_best=True,
         save_last=True,
         check_save_in_interval=1,
         weights_dir=WEIGHTS_DIR,
-        notes=""
+        notes="Sincos angle encoding"
     )
 
     utils.save_model(model.state_dict(), "last_epoch_detr_3d.pth")
