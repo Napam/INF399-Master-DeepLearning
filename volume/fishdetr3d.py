@@ -143,7 +143,8 @@ class DecoderBlock(nn.Module):
         h2 = self.bn2(self.relu(self.conv2(h1)))
         h3 = self.bn3(self.relu(self.conv3(h2 + h1)))  # Skip connection
         return h3
-        
+
+
 def get_decoder_fc(in_features: int, out_features: int, width: int=256, extra_layers: int=3) -> torch.Tensor:
     # n_layers = 2 + extra_layers
     return nn.Sequential(
@@ -151,6 +152,7 @@ def get_decoder_fc(in_features: int, out_features: int, width: int=256, extra_la
         *chain.from_iterable((nn.Linear(width, width), nn.ReLU(inplace=True)) for i in range(extra_layers)),
         nn.Linear(in_features=width, out_features=out_features),
     )
+
 
 class Decoder(nn.Module):
     def __init__(self, 
@@ -236,14 +238,15 @@ class FishDETR(nn.Module):
         hidden_dim: int = 256,
         freeze_encoder: bool = False,
         fc_width: int = 1024,
-        fc_extra_layers: int = 6
+        fc_extra_layers: int = 6,
+        pretrained_enc: bool=True
     ):
         """
         num_classes: int, should be number of classes WITHOUT "no object" class
         """
         super().__init__()
 
-        self.encoder = Encoder(hidden_dim=hidden_dim)
+        self.encoder = Encoder(hidden_dim=hidden_dim, pretrained=pretrained_enc)
         self.decoder = Decoder(6, fc_width=fc_width, fc_extra_layers=fc_extra_layers)
 
         if freeze_encoder:
@@ -363,7 +366,6 @@ class FishDETR(nn.Module):
                 plot_labels(img[None, ...], [y_], ax=ax_right, **kwargs)
         else:
             plot_output(imgs, output, **kwargs)
-
 
 def postprocess_to_df(imgnrs: Sequence[int], output: DETROutput, thresh: float = 0.2):
     '''

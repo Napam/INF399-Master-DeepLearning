@@ -16,7 +16,7 @@ from torchvision import transforms
 StereoImgs = Tuple[torch.Tensor, torch.Tensor]
 DETROutput = Dict[str, torch.Tensor]
 
-from fishdetr3d import Encoder, plot_labels, plot_output, get_random_input
+from fishdetr3d import Encoder, plot_labels, plot_output, get_random_input, postprocess_to_df, postprocess
 
 
 class DecoderBlock(nn.Module):
@@ -59,6 +59,7 @@ class DecoderBlock(nn.Module):
         h3 = self.bn3(self.relu(self.conv3(h2 + h1)))  # Skip connection
         return h3
         
+
 def get_decoder_fc(in_features: int, out_features: int, width: int=256, extra_layers: int=3) -> torch.Tensor:
     # n_layers = 2 + extra_layers
     return nn.Sequential(
@@ -66,6 +67,7 @@ def get_decoder_fc(in_features: int, out_features: int, width: int=256, extra_la
         *chain.from_iterable((nn.Linear(width, width), nn.ReLU(inplace=True)) for i in range(extra_layers)),
         nn.Linear(in_features=width, out_features=out_features),
     )
+
 
 class Decoder(nn.Module):
     def __init__(self, num_classes, hidden_dim: int = 256, merge_hidden_dim: int = 128):
@@ -148,13 +150,13 @@ class FishDETR(nn.Module):
     Only batch size 1 supported.
     """
 
-    def __init__(self, hidden_dim: int = 256, freeze_encoder: bool = False):
+    def __init__(self, hidden_dim: int = 256, freeze_encoder: bool = False, pretrained_enc: bool=True):
         """
         num_classes: int, should be number of classes WITHOUT "no object" class
         """
         super().__init__()
 
-        self.encoder = Encoder(hidden_dim=hidden_dim)
+        self.encoder = Encoder(hidden_dim=hidden_dim, pretrained=pretrained_enc)
         self.decoder = Decoder(6)
 
         if freeze_encoder:

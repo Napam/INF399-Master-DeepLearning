@@ -13,7 +13,7 @@ from utils import debug, debugs, debugt
 from matplotlib import pyplot as plt
 from torchvision import transforms
 
-from fishdetr3d import plot_labels, plot_output, get_random_input, DecoderBlock
+from fishdetr3d import plot_labels, plot_output, get_random_input, DecoderBlock, postprocess_to_df
 
 StereoImgs = Tuple[torch.Tensor, torch.Tensor]
 DETROutput = Dict[str, torch.Tensor]
@@ -168,13 +168,13 @@ class FishDETR(nn.Module):
     Only batch size 1 supported.
     """
 
-    def __init__(self, hidden_dim: int = 256, freeze_encoder: bool = False):
+    def __init__(self, hidden_dim: int = 256, freeze_encoder: bool = False, pretrained_enc: bool=True):
         """
         num_classes: int, should be number of classes WITHOUT "no object" class
         """
         super().__init__()
 
-        self.encoder = Encoder(hidden_dim=hidden_dim)
+        self.encoder = Encoder(hidden_dim=hidden_dim, pretrained=pretrained_enc)
         self.decoder = Decoder(6)
 
         if freeze_encoder:

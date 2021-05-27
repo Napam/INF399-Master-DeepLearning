@@ -12,6 +12,7 @@ import torchvision.transforms as T
 import utils
 from utils import debug, debugs, debugt
 from matplotlib import pyplot as plt
+from fishdetr3d import get_random_input, plot_output, plot_labels
 from torchvision import transforms
 
 StereoImgs = Tuple[torch.Tensor, torch.Tensor]
@@ -144,6 +145,7 @@ class DecoderBlock(nn.Module):
         h3 = self.bn3(self.relu(self.conv3(h2 + h1)))  # Skip connection
         return h3
         
+
 def get_decoder_fc(in_features: int, out_features: int, width: int=256, extra_layers: int=3) -> torch.Tensor:
     # n_layers = 2 + extra_layers
     return nn.Sequential(
@@ -151,6 +153,7 @@ def get_decoder_fc(in_features: int, out_features: int, width: int=256, extra_la
         *chain.from_iterable((nn.Linear(width, width), nn.ReLU(inplace=True)) for i in range(extra_layers)),
         nn.Linear(in_features=width, out_features=out_features),
     )
+
 
 class Decoder(nn.Module):
     def __init__(self, 
@@ -219,6 +222,7 @@ class Decoder(nn.Module):
         # finally project transformer outputs to class labels and bounding boxes
         return {'pred_logits': pred_logits, 'pred_boxes': pred_boxes}
 
+
 def normalize_rotations(rots: Union[np.ndarray, float]):
     """
     Normalize rotations, R -> [0, 1]
@@ -228,6 +232,7 @@ def normalize_rotations(rots: Union[np.ndarray, float]):
     # and 1 is 2 pi radians
     # Python modulo: -0.75 % 1 -> 0.25
     return (rots / (2 * np.pi)) % 1
+
 
 class FishDETR(nn.Module):
     """
@@ -247,14 +252,15 @@ class FishDETR(nn.Module):
         hidden_dim: int = 256,
         freeze_encoder: bool = False,
         fc_width: int = 1024,
-        fc_extra_layers: int = 6
+        fc_extra_layers: int = 6,
+        pretrained_enc: bool=True
     ):
         """
         num_classes: int, should be number of classes WITHOUT "no object" class
         """
         super().__init__()
 
-        self.encoder = Encoder(hidden_dim=hidden_dim)
+        self.encoder = Encoder(hidden_dim=hidden_dim, pretrained=pretrained_enc)
         self.decoder = Decoder(6, fc_width=fc_width, fc_extra_layers=fc_extra_layers)
 
         if freeze_encoder:
@@ -317,7 +323,8 @@ class FishDETR(nn.Module):
         
         for tgt in y:
             boxes = tgt['boxes']
-            boxes = torch.cat([boxes[:,:6], boxes[:,6:].sin(), boxes[:,6:].cos()], axis=1)
+            raw_angles = boxes[:,6:] * 2 * np.pi
+            boxes = torch.cat([boxes[:,:6], raw_angles.sin(), raw_angles.cos()], axis=1)
             tgt['boxes'] = boxes
 
         loss_dict = criterion(output, y)
@@ -344,7 +351,8 @@ class FishDETR(nn.Module):
 
         for tgt in y:
             boxes = tgt['boxes']
-            boxes = torch.cat([boxes[:,:6], boxes[:,6:].sin(), boxes[:,6:].cos()], axis=1)
+            raw_angles = boxes[:,6:] * 2 * np.pi
+            boxes = torch.cat([boxes[:,:6], raw_angles.sin(), raw_angles.cos()], axis=1)
             tgt['boxes'] = boxes
 
         output = self(X)
@@ -443,80 +451,8 @@ def postprocess_sample(
     
     # sincos encoding to raw radian angles
     boxes = boxes[keepmask]
-    boxes = torch.column_stack([boxes[:,:6], torch.atan2(boxes[:,[6,7,8]], boxes[:,[9,10,11]])])
+    boxes = torch.column_stack([boxes[:,:6], (torch.atan2(boxes[:,[6,7,8]], boxes[:,[9,10,11]]) / (2*np.pi)) % 1])
     return confidences[keepmask], logits[keepmask].argmax(-1), 
-
-
-def preprocess(X: StereoImgs, y: DETROutput, device: torch.device) -> Tuple[StereoImgs, DETROutput]:
-    return preprocess_images(X, device), preprocess_labels(y, device)
-
-
-def preprocess_images(images: StereoImgs, device: Optional[torch.device] = None) -> List[tuple]:
-    """
-    Each tensor in StereoImgs is (N,C,H,W)
-    """
-    return (images[0].to(device), images[1].to(device))
-
-
-def preprocess_labels(labels: Iterable, device: Optional[torch.device] = None) -> List[dict]:
-    return [{k: v.to(device) for k, v in t.items()} for t in labels]
-
-
-def get_random_input(
-    N: int = 1, C: int = 3, H: int = 416, W: int = 416, device: Optional[torch.device] = None
-) -> StereoImgs:
-    """To test feedforward
-    N: N in (N,C,H,W)
-    """
-    return (torch.randn((N, C, H, W), device=device), torch.randn((N, C, H, W), device=device))
-
-
-def collate(batch):
-    Xs, ys = zip(*batch)
-
-    Xs: Tuple[Tuple[torch.Tensor]]
-    ys: Tuple[DETROutput]
-
-    lefts = [None] * len(Xs)
-    rights = [None] * len(Xs)
-    for i, (left, right) in enumerate(Xs):
-        lefts[i] = left
-        rights[i] = right
-
-    lefts = torch.cat(lefts)
-    rights = torch.cat(rights)
-    return [lefts, rights], ys
-
-
-@torch.no_grad()
-def plot_output(
-    imgs: ArrayLike, output: DETROutput, enforce_cpu: bool = True, thresh: float = 0.2, **kwargs
-):
-    """
-    imgs: batch of imgs
-    """
-    if enforce_cpu:
-        try:
-            imgs = imgs.cpu()
-        except AttributeError:
-            pass
-
-        output = {
-            "pred_logits": output["pred_logits"].cpu(),
-            "pred_boxes": output["pred_boxes"].cpu(),
-        }
-
-    class_predss, box_predss = postprocess(output, thresh)
-    for img, class_preds, box_preds in zip(imgs, class_predss, box_predss):
-        utils.plot_bboxes(img=img, classes=class_preds, boxes=box_preds, **kwargs)
-
-
-def plot_labels(imgs: ArrayLike, labels: List[DETROutput], enforce_cpu: bool = True, **kwargs):
-    for img, dict_ in zip(imgs, labels):
-        if enforce_cpu:
-            boxes = dict_["boxes"].cpu()
-            classes = dict_["labels"].cpu()
-        utils.plot_bboxes(img=img, classes=classes, boxes=boxes, **kwargs)
 
 
 if __name__ == "__main__":
@@ -524,12 +460,12 @@ if __name__ == "__main__":
     model = FishDETR()
     X = get_random_input(4)
 
-    with torch.no_grad():
-        output = model(X)
-        debugs(output['pred_logits'])
-        debugs(output['pred_boxes'])
-        confs, cls, bx = postprocess(output, 0.15)
-        
+    # with torch.no_grad():
+    #     output = model(X)
+    #     debugs(output['pred_logits'])
+    #     debugs(output['pred_boxes'])
+    #     confs, cls, bx = postprocess(output, 0.15)
+    print(model.state_dict()['decoder.linear_boxes.14.bias'])
 
     # lol = set()
     # model.apply(lambda x: lol.add(x.__class__.__name__))

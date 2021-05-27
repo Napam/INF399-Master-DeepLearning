@@ -13,7 +13,9 @@ from torch.utils.data import DataLoader
 from utils import debugt, debugs, debug
 from datetime import datetime
 
-import fishdetr3d_sincos as detr
+# import fishdetr3d_sincos as detr
+import fishdetr3d_splitfc as detr
+from fishdetr3d import collate, preprocess
 # import detr_batchboy_regular as detr
 from generators import Torch3DDataset
 from tqdm import tqdm
@@ -29,7 +31,7 @@ import sqlite3
 import pathlib
 
 
-def _validate_model(context: dict, traintqdminfo: dict) -> dict:
+def _validate_model(context: dict, traintqdminfo: dict, all_outputs: bool=False) -> dict:
     model = context['model']
     criterion = context['criterion']
 
@@ -50,21 +52,33 @@ def _validate_model(context: dict, traintqdminfo: dict) -> dict:
     model.eval()
     criterion.eval()
 
+    if all_outputs:
+        outputs = []
+
     # Loop through val batches
     with torch.no_grad():
         for i, (images, labels) in valbar:
-            X, y = detr.preprocess(images, labels, context['device'])
+            X, y = preprocess(images, labels, context['device'])
 
             output: detr.DETROutput
             loss: torch.Tensor
             output, loss = model.eval_on_batch(X, y, criterion)
             
+            if all_outputs:
+                outputs.append({
+                    "pred_logits": output["pred_logits"].cpu(),
+                    "pred_boxes": output["pred_boxes"].cpu(),
+                })
+
             # print statistics
             running_val_loss += loss.item()
             val_loss = running_val_loss / (i+1)
             valtqdminfo = {**traintqdminfo, 'val loss':val_loss}
             valbar.set_postfix(valtqdminfo)
-            
+    
+    if all_outputs:
+        output = outputs
+
     return valtqdminfo, output, loss, running_val_loss / (i+1)
 
 
@@ -91,7 +105,7 @@ def _train_model(context: dict, epoch: int, n_epochs: int, leave_tqdm: bool) -> 
 
     # Loop through train batches
     for i, (images, labels) in trainbar:
-        X, y = detr.preprocess(images, labels, context['device'])
+        X, y = preprocess(images, labels, context['device'])
 
         output: detr.DETROutput
         loss: torch.Tensor
@@ -204,7 +218,7 @@ def train_model(
                     if not epoch % check_save_in_interval:
                         utils.save_model(
                             obj={
-                                'model_state_dict':model.state_dict(),
+                                'model':model.state_dict(),
                                 'optimizer':optimizer.state_dict(),
                                 'criterion':criterion.state_dict(),
                             },
@@ -246,9 +260,9 @@ if __name__ == '__main__':
 
     modelpath = os.path.join(
         WEIGHTS_DIR,
-        "weights_2021-05-22",
-        "trainsession_2021-05-22T09h48m01s",
-        "last_epoch.pth"
+        "weights_2021-05-23",
+        "trainsession_2021-05-23T17h10m03s",
+        "detr_statedicts_epoch8_train0.1550_val0.1558.pth"
     )
     
     db_con = sqlite3.connect(f'file:{os.path.join(DATASET_DIR,"bboxes.db")}?mode=ro', uri=True)
@@ -259,8 +273,8 @@ if __name__ == '__main__':
     # TRAIN_RANGE = (0, int(9/10*n_data))
     # VAL_RANGE = (int(9/10*n_data), int(10/10*n_data))
 
-    TRAIN_RANGE = (0, 128)
-    VAL_RANGE = (128, 256)
+    TRAIN_RANGE = (0, 25000)
+    VAL_RANGE = (59000, 60000)
     
     # TRAIN_RANGE = (0, 49000)
     # VAL_RANGE = (49000,50000)
@@ -276,7 +290,7 @@ if __name__ == '__main__':
     trainloader = DataLoader(
         dataset = traingen,
         batch_size = BATCH_SIZE,
-        collate_fn = detr.collate,
+        collate_fn = collate,
         pin_memory = True,
         shuffle = True
     )
@@ -285,13 +299,13 @@ if __name__ == '__main__':
         dataset = valgen,
         # dataset = traingen2,
         batch_size = BATCH_SIZE,
-        collate_fn = detr.collate,
+        collate_fn = collate,
         pin_memory = True
     )
 
-    # loaded_weights = torch.load(modelpath, map_location='cpu')
+    loaded_weights = torch.load(modelpath, map_location='cpu')
     model: detr.FishDETR = detr.FishDETR().to(device)
-    # model.load_state_dict(loaded_weights['model'])
+    model.load_state_dict(loaded_weights['model_state_dict'])
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=1e-6)
     optimizer.param_groups[0]['lr'] = 1e-5
@@ -301,14 +315,14 @@ if __name__ == '__main__':
     criterion = SetCriterion(6, matcher, weight_dict, eos_coef = 0.5, losses=losses)
     criterion = criterion.to(device)
 
-    # optimizer.load_state_dict(loaded_weights['optimizer'])
-    # criterion.load_state_dict(loaded_weights['criterion'])
+    optimizer.load_state_dict(loaded_weights['optimizer'])
+    criterion.load_state_dict(loaded_weights['criterion'])
     # optimizer.param_groups[0]['lr'] = 1e-6
     # optimizer.param_groups[0]['weight_decay'] = 1e-7
-    # print('Optimizer and criterion successfully loaded with stored buffers')
+    print('Optimizer and criterion successfully loaded with stored buffers')
 
     # Will crash if I don't do this
-    # del loaded_weights
+    del loaded_weights
 
     print(f"LR={optimizer.param_groups[0]['lr']}")
     train_model(
@@ -317,24 +331,25 @@ if __name__ == '__main__':
         model,
         criterion,
         optimizer,
-        n_epochs=2,
+        n_epochs=42,
         device=device,
         validate=True,
         save_best=True,
         save_last=True,
         check_save_in_interval=1,
         weights_dir=WEIGHTS_DIR,
-        notes="Sincos angle encoding"
+        notes="Split FC"
     )
 
-    utils.save_model(model.state_dict(), "last_epoch_detr_3d.pth")
-    filepath = "last_epoch_detr_3d.pth"
-    utils.save_model(
-        obj={
-            'model_state_dict':model.state_dict(),
-            'optimizer':optimizer.state_dict(),
-            'criterion':criterion.state_dict(),
-        },
-        f = filepath
-    )
-    print(f"\nSaved model: {filepath}\n")
+    if False:
+        utils.save_model(model.state_dict(), "last_epoch_detr_3d.pth")
+        filepath = "last_epoch_detr_3d.pth"
+        utils.save_model(
+            obj={
+                'model':model.state_dict(),
+                'optimizer':optimizer.state_dict(),
+                'criterion':criterion.state_dict(),
+            },
+            f = filepath
+        )
+        print(f"\nSaved model: {filepath}\n")

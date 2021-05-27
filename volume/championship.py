@@ -89,7 +89,7 @@ if __name__ == '__main__':
         pin_memory = True
     )
 
-    models = [FishDETR_first, FishDETR_alt, FishDETR_split]
+    models = [FishDETR_sincos]
     notes = [
         "Sincos", 
     ]
@@ -112,7 +112,7 @@ if __name__ == '__main__':
         
         weight_dict = {'loss_ce': 1, 'loss_bbox': 1 , 'loss_giou': 1, 'loss_smooth':1}
         losses = ['labels', 'boxes_3d']
-        optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=1e-6)
+        optimizer = torch.optim.AdamW(model.parameters(), lr=2.5e-6, weight_decay=1e-6)
         matcher = HungarianMatcher(use_giou=False, smooth_l1=False)
         criterion = SetCriterion(6, matcher, weight_dict, eos_coef = 0.5, losses=losses)
         criterion = criterion.to(device)
@@ -120,7 +120,11 @@ if __name__ == '__main__':
         if weightdir:
             loaded_weights = torch.load(weightdir, map_location='cpu')
 
-            model.load_state_dict(loaded_weights['model_state_dict'])
+            try:
+                model.load_state_dict(loaded_weights['model_state_dict'])
+            except KeyError:
+                model.load_state_dict(loaded_weights['model'])
+
             optimizer.load_state_dict(loaded_weights['optimizer'])
             criterion.load_state_dict(loaded_weights['criterion'])
 
