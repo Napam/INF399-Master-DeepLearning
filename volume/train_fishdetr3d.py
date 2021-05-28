@@ -14,7 +14,8 @@ from utils import debugt, debugs, debug
 from datetime import datetime
 
 # import fishdetr3d_sincos as detr
-import fishdetr3d_splitfc as detr
+# import fishdetr3d_splitfc as detr
+import fishdetr3d_alt as detr
 from fishdetr3d import collate, preprocess
 # import detr_batchboy_regular as detr
 from generators import Torch3DDataset
@@ -260,11 +261,11 @@ if __name__ == '__main__':
 
     modelpath = os.path.join(
         WEIGHTS_DIR,
-        "weights_2021-05-23",
-        "trainsession_2021-05-23T17h10m03s",
-        "detr_statedicts_epoch8_train0.1550_val0.1558.pth"
+        "weights_2021-05-27/",
+        "trainsession_2021-05-27T17h45m20s",
+        "last_epoch.pth"
     )
-    
+
     db_con = sqlite3.connect(f'file:{os.path.join(DATASET_DIR,"bboxes.db")}?mode=ro', uri=True)
     print("Getting number of images in database: ", end="")
     n_data = pd.read_sql_query(f'SELECT COUNT(DISTINCT(imgnr)) FROM {TABLE}', db_con).values[0][0]
@@ -305,7 +306,7 @@ if __name__ == '__main__':
 
     loaded_weights = torch.load(modelpath, map_location='cpu')
     model: detr.FishDETR = detr.FishDETR().to(device)
-    model.load_state_dict(loaded_weights['model_state_dict'])
+    model.load_state_dict(loaded_weights['model'])
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=1e-6)
     optimizer.param_groups[0]['lr'] = 1e-5
@@ -317,8 +318,8 @@ if __name__ == '__main__':
 
     optimizer.load_state_dict(loaded_weights['optimizer'])
     criterion.load_state_dict(loaded_weights['criterion'])
-    # optimizer.param_groups[0]['lr'] = 1e-6
-    # optimizer.param_groups[0]['weight_decay'] = 1e-7
+    optimizer.param_groups[0]['lr'] = 1e-5
+    optimizer.param_groups[0]['weight_decay'] = 1e-3
     print('Optimizer and criterion successfully loaded with stored buffers')
 
     # Will crash if I don't do this
@@ -331,14 +332,14 @@ if __name__ == '__main__':
         model,
         criterion,
         optimizer,
-        n_epochs=42,
+        n_epochs=32,
         device=device,
         validate=True,
         save_best=True,
         save_last=True,
         check_save_in_interval=1,
         weights_dir=WEIGHTS_DIR,
-        notes="Split FC"
+        notes="Alt model, round 2"
     )
 
     if False:

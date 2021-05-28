@@ -94,7 +94,7 @@ if __name__ == '__main__':
         "Sincos", 
     ]
     weightdirs = [
-        "",
+        "fish_statedicts/weights_2021-05-27/trainsession_2021-05-27T07h33m16s/last_epoch.pth",
     ]
     # notes = [
     #     "Regular FishDETR", 
@@ -138,7 +138,7 @@ if __name__ == '__main__':
             model,
             criterion,
             optimizer,
-            n_epochs=100,
+            n_epochs=47,
             device=device,
             validate=True,
             save_best=True,
