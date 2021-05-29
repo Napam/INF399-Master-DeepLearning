@@ -452,7 +452,7 @@ def postprocess_sample(
     # sincos encoding to raw radian angles
     boxes = boxes[keepmask]
     boxes = torch.column_stack([boxes[:,:6], (torch.atan2(boxes[:,[6,7,8]], boxes[:,[9,10,11]]) / (2*np.pi)) % 1])
-    return confidences[keepmask], logits[keepmask].argmax(-1), 
+    return confidences[keepmask], logits[keepmask].argmax(-1), boxes
 
 
 if __name__ == "__main__":

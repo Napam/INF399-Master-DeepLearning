@@ -35,6 +35,7 @@ def lossplots_combine(name_n_paths: list):
         # exit()
         plt.plot(df.train.values, c='k', label='train', linewidth=1)
         plt.plot(df.val.values, c='orangered', label='val', linewidth=1)
+        plt.axvline(99, linewidth=0.8, linestyle='--', c='gray')
         plt.title(name)
         plt.legend()
         plt.savefig("plots/"+f"lossplot_{name}.png")
@@ -46,6 +47,7 @@ def lossplots_combine(name_n_paths: list):
         paths = stuff[1:]
         df = pd.concat((pd.read_csv(pathlib.Path(path) / "losses.csv") for path in paths))
         plt.plot(df.train.values, label=name, linewidth=1)
+        plt.axvline(99, linewidth=0.8, linestyle='--', c='gray')
 
     plt.title("Comparing models on validation set")
     plt.legend()
@@ -70,7 +72,8 @@ if __name__ == '__main__':
         
         ('SinusFish3D',
          'fish_statedicts/weights_2021-05-27/trainsession_2021-05-27T07h33m16s',
-         'fish_statedicts/weights_2021-05-28/trainsession_2021-05-28T08h23m37s'),
+         'fish_statedicts/weights_2021-05-28/trainsession_2021-05-28T08h23m37s',
+         'fish_statedicts/weights_2021-05-29/trainsession_2021-05-29T10h06m13s'),
     ]
 
     lossplots_combine(name_n_paths_comb)

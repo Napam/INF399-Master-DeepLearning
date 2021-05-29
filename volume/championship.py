@@ -58,8 +58,8 @@ if __name__ == '__main__':
     n_data = pd.read_sql_query(f'SELECT COUNT(DISTINCT(imgnr)) FROM {TABLE}', db_con).values[0][0]
     print(n_data)
 
-    # TRAIN_RANGE = (0, 25000)
-    TRAIN_RANGE = (0, 15000)
+    TRAIN_RANGE = (0, 25000)
+    # TRAIN_RANGE = (0, 15000)
     VAL_RANGE = (59000,60000)
     
     # TRAIN_RANGE = (0, 64)
@@ -94,7 +94,7 @@ if __name__ == '__main__':
         "Sincos", 
     ]
     weightdirs = [
-        "fish_statedicts/weights_2021-05-27/trainsession_2021-05-27T07h33m16s/last_epoch.pth",
+        "fish_statedicts/weights_2021-05-28/trainsession_2021-05-28T08h23m37s/last_epoch.pth",
     ]
     # notes = [
     #     "Regular FishDETR", 
@@ -138,7 +138,7 @@ if __name__ == '__main__':
             model,
             criterion,
             optimizer,
-            n_epochs=47,
+            n_epochs=50,
             device=device,
             validate=True,
             save_best=True,

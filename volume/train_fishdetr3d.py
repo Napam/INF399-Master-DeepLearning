@@ -15,7 +15,8 @@ from datetime import datetime
 
 # import fishdetr3d_sincos as detr
 # import fishdetr3d_splitfc as detr
-import fishdetr3d_alt as detr
+# import fishdetr3d_alt as detr
+import fishdetr3d as detr
 from fishdetr3d import collate, preprocess
 # import detr_batchboy_regular as detr
 from generators import Torch3DDataset
@@ -261,10 +262,11 @@ if __name__ == '__main__':
 
     modelpath = os.path.join(
         WEIGHTS_DIR,
-        "weights_2021-05-27/",
-        "trainsession_2021-05-27T17h45m20s",
+        "weights_2021-05-21/",
+        "trainsession_2021-05-21T08h58m00s",
         "last_epoch.pth"
     )
+    # fish_statedicts/weights_2021-05-21/trainsession_2021-05-21T08h58m00s/last_epoch.pth
 
     db_con = sqlite3.connect(f'file:{os.path.join(DATASET_DIR,"bboxes.db")}?mode=ro', uri=True)
     print("Getting number of images in database: ", end="")
@@ -274,11 +276,11 @@ if __name__ == '__main__':
     # TRAIN_RANGE = (0, int(9/10*n_data))
     # VAL_RANGE = (int(9/10*n_data), int(10/10*n_data))
 
-    TRAIN_RANGE = (0, 25000)
-    VAL_RANGE = (59000, 60000)
+    # TRAIN_RANGE = (0, 25000)
+    # VAL_RANGE = (59000, 60000)
     
-    # TRAIN_RANGE = (0, 49000)
-    # VAL_RANGE = (49000,50000)
+    TRAIN_RANGE = (0, 59000)
+    VAL_RANGE = (59000,60000)
 
     print(f"TRAIN_RANGE: {TRAIN_RANGE}")
     print(f"VAL_RANGE: {VAL_RANGE}")
@@ -318,8 +320,8 @@ if __name__ == '__main__':
 
     optimizer.load_state_dict(loaded_weights['optimizer'])
     criterion.load_state_dict(loaded_weights['criterion'])
-    optimizer.param_groups[0]['lr'] = 1e-5
-    optimizer.param_groups[0]['weight_decay'] = 1e-3
+    # optimizer.param_groups[0]['lr'] = 1e-5
+    # optimizer.param_groups[0]['weight_decay'] = 1e-3
     print('Optimizer and criterion successfully loaded with stored buffers')
 
     # Will crash if I don't do this
@@ -332,14 +334,14 @@ if __name__ == '__main__':
         model,
         criterion,
         optimizer,
-        n_epochs=32,
+        n_epochs=100,
         device=device,
         validate=True,
         save_best=True,
         save_last=True,
         check_save_in_interval=1,
         weights_dir=WEIGHTS_DIR,
-        notes="Alt model, round 2"
+        notes="Regular FishDETR, big train"
     )
 
     if False:
