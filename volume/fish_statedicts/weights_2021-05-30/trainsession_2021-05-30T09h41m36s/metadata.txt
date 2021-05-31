@@ -1,4 +1,4 @@
-range of train indices:[0,24999]
+range of train indices:[0,58999]
 range of val indices:[59000,59999]
 Optimizer:
 AdamW (
@@ -6,8 +6,8 @@ Parameter Group 0
     amsgrad: False
     betas: (0.9, 0.999)
     eps: 1e-08
-    lr: 8e-06
-    weight_decay: 0.0001
+    lr: 1e-06
+    weight_decay: 1e-07
 )
 Other notes:
-Alt model, round 2
+Regular FishDETR, big train

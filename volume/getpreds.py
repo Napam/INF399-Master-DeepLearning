@@ -63,7 +63,7 @@ def get_preds_as_csvs(models_n_stuff: List[dict], context: dict):
 
 if __name__ == '__main__':
     try:
-        device = utils.pytorch_init_janus_gpu(0)
+        device = utils.pytorch_init_janus_gpu(1)
         print(f'Using device: {device} ({torch.cuda.get_device_name()})')
         print(utils.get_cuda_status(device))
     except AssertionError as e:
@@ -72,7 +72,7 @@ if __name__ == '__main__':
         print('Device is set to CPU')
 
     TORCH_CACHE_DIR = 'torch_cache'
-    DATASET_DIR = '/mnt/blendervol/3d_data'
+    DATASET_DIR = '/mnt/blendervol/3d_data_test'
     TABLE = 'bboxes_full'
     torch.hub.set_dir(TORCH_CACHE_DIR)
     num2name = eval(open(os.path.join(DATASET_DIR,"metadata.txt"), 'r').read())
@@ -82,8 +82,7 @@ if __name__ == '__main__':
     n_data = pd.read_sql_query(f'SELECT COUNT(DISTINCT(imgnr)) FROM {TABLE}', db_con).values[0][0]
     print(n_data)
 
-    VAL_RANGE = (59000,60000)
-    # VAL_RANGE = (0,64)
+    VAL_RANGE = (0,1000)
 
     print(f"VAL_RANGE: {VAL_RANGE}")
     valgen = Torch3DDataset(DATASET_DIR, TABLE, 1, shuffle=False, imgnrs=range(*VAL_RANGE))
@@ -102,17 +101,21 @@ if __name__ == '__main__':
     os.makedirs(mapdir, exist_ok=True)
 
     models_n_stuff = [
-        # {'api':fishdetr3d_regular,
-        #  'name':'regular',
-        #  'weightdir':"fish_statedicts/weights_2021-05-21/trainsession_2021-05-21T08h58m00s/detr_statedicts_epoch47_train0.1166_val0.1192.pth"},
+        {'api':fishdetr3d_regular,
+         'name':'regular60k',
+         'weightdir':"fish_statedicts/weights_2021-05-30/trainsession_2021-05-30T15h15m21s/detr_statedicts_epoch12_train0.1146_val0.1086.pth"},
         
-        # {'api':fishdetr3d_alt, 
-        #  'name':'alt',
-        #  'weightdir':"fish_statedicts/weights_2021-05-22/trainsession_2021-05-22T19h07m55s/detr_statedicts_epoch3_train0.2719_val0.6996.pth"},
+        {'api':fishdetr3d_regular,
+         'name':'regular25k',
+         'weightdir':"fish_statedicts/weights_2021-05-21/trainsession_2021-05-21T08h58m00s/detr_statedicts_epoch47_train0.1166_val0.1192.pth"},
         
-        # {'api':fishdetr3d_splitfc, 
-        #  'name':'splitfc',
-        #  'weightdir':"fish_statedicts/weights_2021-05-25/trainsession_2021-05-25T18h09m48s/detr_statedicts_epoch40_train0.1444_val0.1449.pth"},
+        {'api':fishdetr3d_alt, 
+         'name':'alt',
+         'weightdir':"fish_statedicts/weights_2021-05-22/trainsession_2021-05-22T19h07m55s/detr_statedicts_epoch3_train0.2719_val0.6996.pth"},
+        
+        {'api':fishdetr3d_splitfc, 
+         'name':'splitfc',
+         'weightdir':"fish_statedicts/weights_2021-05-25/trainsession_2021-05-25T18h09m48s/detr_statedicts_epoch40_train0.1444_val0.1449.pth"},
         
         {'api':fishdetr3d_sincos,
          'name':'sincos',

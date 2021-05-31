@@ -96,6 +96,25 @@ class SetCriterion(nn.Module):
         losses = {'loss_smooth': loss_loc + loss_dim + 2*loss_rot}
         return losses
 
+    @torch.no_grad()
+    def loss_boxes_3d_sep(self, outputs, targets, indices, num_boxes):
+        '''
+        For evulation only
+        '''
+        assert "pred_boxes" in outputs
+        idx = self._get_src_permutation_idx(indices)
+        src_boxes = outputs["pred_boxes"][idx]
+        target_boxes = torch.cat([t["boxes"][i] for t, (_, i) in zip(targets, indices)], dim=0)
+        
+        # loss_loc = F.mse_loss(src_boxes[:,[0,1,2]], target_boxes[:,[0,1,2]])
+        # loss_size = F.mse_loss(src_boxes[:,[3,4,5]], target_boxes[:,[3,4,5]])
+        # loss_rot = F.mse_loss(src_boxes[:,[6,7,8]], target_boxes[:,[6,7,8]])
+        loss_loc = F.smooth_l1_loss(src_boxes[:,[0,1,2]], target_boxes[:,[0,1,2]])
+        loss_dim = F.smooth_l1_loss(src_boxes[:,[3,4,5]], target_boxes[:,[3,4,5]])
+        loss_rot = F.smooth_l1_loss(src_boxes[:,6:], target_boxes[:,6:])
+        losses = {'loss_loc':loss_loc, 'loss_dim':loss_dim, 'loss_rot':loss_rot}
+        return losses
+
     def _get_src_permutation_idx(self, indices):
         # permute predictions following indices
         batch_idx = torch.cat([torch.full_like(src, i) for i, (src, _) in enumerate(indices)])
@@ -112,7 +131,8 @@ class SetCriterion(nn.Module):
         loss_map = {
             "labels": self.loss_labels,
             "boxes": self.loss_boxes,
-            "boxes_3d": self.loss_boxes_3d
+            "boxes_3d": self.loss_boxes_3d,
+            "boxes_3d_sep": self.loss_boxes_3d_sep,
         }
         assert loss in loss_map, f"do you really want to compute {loss} loss?"
         return loss_map[loss](outputs, targets, indices, num_boxes, **kwargs)

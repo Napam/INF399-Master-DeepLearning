@@ -254,21 +254,21 @@ if __name__ == '__main__':
         print('Device is set to CPU')
 
     TORCH_CACHE_DIR = 'torch_cache'
-    DATASET_DIR = '/mnt/blendervol/3d_data'
+    DATADIR_TRAIN = '/mnt/blendervol/3d_data'
+    DATADIR_VAL = '/mnt/blendervol/3d_data_test'
     TABLE = 'bboxes_full'
     WEIGHTS_DIR = 'fish_statedicts'
     torch.hub.set_dir(TORCH_CACHE_DIR)
-    num2name = eval(open(os.path.join(DATASET_DIR,"metadata.txt"), 'r').read())
+    num2name = eval(open(os.path.join(DATADIR_TRAIN,"metadata.txt"), 'r').read())
 
     modelpath = os.path.join(
         WEIGHTS_DIR,
-        "weights_2021-05-21/",
-        "trainsession_2021-05-21T08h58m00s",
-        "last_epoch.pth"
+        "weights_2021-05-30/",
+        "trainsession_2021-05-30T15h15m21s",
+        "detr_statedicts_epoch12_train0.1146_val0.1086.pth"
     )
-    # fish_statedicts/weights_2021-05-21/trainsession_2021-05-21T08h58m00s/last_epoch.pth
 
-    db_con = sqlite3.connect(f'file:{os.path.join(DATASET_DIR,"bboxes.db")}?mode=ro', uri=True)
+    db_con = sqlite3.connect(f'file:{os.path.join(DATADIR_TRAIN,"bboxes.db")}?mode=ro', uri=True)
     print("Getting number of images in database: ", end="")
     n_data = pd.read_sql_query(f'SELECT COUNT(DISTINCT(imgnr)) FROM {TABLE}', db_con).values[0][0]
     print(n_data)
@@ -279,15 +279,15 @@ if __name__ == '__main__':
     # TRAIN_RANGE = (0, 25000)
     # VAL_RANGE = (59000, 60000)
     
-    TRAIN_RANGE = (0, 59000)
-    VAL_RANGE = (59000,60000)
+    TRAIN_RANGE = (0, 60000)
+    VAL_RANGE = (0,1000)
 
     print(f"TRAIN_RANGE: {TRAIN_RANGE}")
     print(f"VAL_RANGE: {VAL_RANGE}")
 
-    traingen = Torch3DDataset(DATASET_DIR, TABLE, 1, shuffle=True, imgnrs=range(*TRAIN_RANGE))
-    # traingen2 = Torch3DDataset(DATASET_DIR, TABLE, 1, shuffle=False, imgnrs=range(*TRAIN_RANGE))
-    valgen = Torch3DDataset(DATASET_DIR, TABLE, 1, shuffle=False, imgnrs=range(*VAL_RANGE))
+    traingen = Torch3DDataset(DATADIR_TRAIN, TABLE, 1, shuffle=True, imgnrs=range(*TRAIN_RANGE))
+    # traingen2 = Torch3DDataset(DATADIR_TRAIN, TABLE, 1, shuffle=False, imgnrs=range(*TRAIN_RANGE))
+    valgen = Torch3DDataset(DATADIR_VAL, TABLE, 1, shuffle=False, imgnrs=range(*VAL_RANGE))
 
     BATCH_SIZE = 8
     trainloader = DataLoader(
@@ -310,8 +310,8 @@ if __name__ == '__main__':
     model: detr.FishDETR = detr.FishDETR().to(device)
     model.load_state_dict(loaded_weights['model'])
 
-    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=1e-6)
-    optimizer.param_groups[0]['lr'] = 1e-5
+    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=1e-7)
+    optimizer.param_groups[0]['lr'] = 1e-6
     weight_dict = {'loss_ce': 1, 'loss_bbox': 1 , 'loss_giou': 1, 'loss_smooth':1}
     losses = ['labels', 'boxes_3d']
     matcher = HungarianMatcher(use_giou=False, smooth_l1=False)
@@ -320,8 +320,8 @@ if __name__ == '__main__':
 
     optimizer.load_state_dict(loaded_weights['optimizer'])
     criterion.load_state_dict(loaded_weights['criterion'])
-    # optimizer.param_groups[0]['lr'] = 1e-5
-    # optimizer.param_groups[0]['weight_decay'] = 1e-3
+    # optimizer.param_groups[0]['lr'] = 1e-6
+    # optimizer.param_groups[0]['weight_decay'] = 1e-8
     print('Optimizer and criterion successfully loaded with stored buffers')
 
     # Will crash if I don't do this
