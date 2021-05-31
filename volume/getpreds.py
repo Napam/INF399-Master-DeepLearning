@@ -103,23 +103,23 @@ if __name__ == '__main__':
     models_n_stuff = [
         {'api':fishdetr3d_regular,
          'name':'regular60k',
-         'weightdir':"fish_statedicts/weights_2021-05-30/trainsession_2021-05-30T15h15m21s/detr_statedicts_epoch12_train0.1146_val0.1086.pth"},
+         'weightdir':"fish_statedicts/weights_2021-05-31/trainsession_2021-05-31T16h26m22s/detr_statedicts_epoch3_train0.1120_val0.1078.pth"},
         
-        {'api':fishdetr3d_regular,
-         'name':'regular25k',
-         'weightdir':"fish_statedicts/weights_2021-05-21/trainsession_2021-05-21T08h58m00s/detr_statedicts_epoch47_train0.1166_val0.1192.pth"},
+        # {'api':fishdetr3d_regular,
+        #  'name':'regular25k',
+        #  'weightdir':"fish_statedicts/weights_2021-05-21/trainsession_2021-05-21T08h58m00s/detr_statedicts_epoch47_train0.1166_val0.1192.pth"},
         
-        {'api':fishdetr3d_alt, 
-         'name':'alt',
-         'weightdir':"fish_statedicts/weights_2021-05-22/trainsession_2021-05-22T19h07m55s/detr_statedicts_epoch3_train0.2719_val0.6996.pth"},
+        # {'api':fishdetr3d_alt, 
+        #  'name':'alt',
+        #  'weightdir':"fish_statedicts/weights_2021-05-22/trainsession_2021-05-22T19h07m55s/detr_statedicts_epoch3_train0.2719_val0.6996.pth"},
         
-        {'api':fishdetr3d_splitfc, 
-         'name':'splitfc',
-         'weightdir':"fish_statedicts/weights_2021-05-25/trainsession_2021-05-25T18h09m48s/detr_statedicts_epoch40_train0.1444_val0.1449.pth"},
+        # {'api':fishdetr3d_splitfc, 
+        #  'name':'splitfc',
+        #  'weightdir':"fish_statedicts/weights_2021-05-25/trainsession_2021-05-25T18h09m48s/detr_statedicts_epoch40_train0.1444_val0.1449.pth"},
         
-        {'api':fishdetr3d_sincos,
-         'name':'sincos',
-         'weightdir':"fish_statedicts/weights_2021-05-28/trainsession_2021-05-28T08h23m37s/detr_statedicts_epoch46_train0.5501_val0.5497.pth"}
+        # {'api':fishdetr3d_sincos,
+        #  'name':'sincos',
+        #  'weightdir':"fish_statedicts/weights_2021-05-28/trainsession_2021-05-28T08h23m37s/detr_statedicts_epoch46_train0.5501_val0.5497.pth"}
     ]
 
     pd.read_sql(f"""
