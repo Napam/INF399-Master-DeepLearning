@@ -64,6 +64,7 @@ def lossplot_mergefish60k(name_n_paths: list):
         paths = stuff[1:]
         
         df = pd.concat((pd.read_csv(pathlib.Path(path) / "losses.csv") for path in paths))
+        print(len(df))
         # print(df.train.values)
         # exit()
         plt.plot(df.train.values, c='k', label='train', linewidth=1)

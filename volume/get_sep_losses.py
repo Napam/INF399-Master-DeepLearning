@@ -46,13 +46,13 @@ def get_stuff(model, criterion, device, valloader) -> dict:
             output = model(X)
             sep_losses = criterion(output, y)
 
-            loclosses[i] = sep_losses['loss_loc']
-            dimlosses[i] = sep_losses['loss_dim']
-            rotlosses[i] = sep_losses['loss_rot']
+            loclosses[i] = sep_losses['loss_loc'].cpu().item()
+            dimlosses[i] = sep_losses['loss_dim'].cpu().item()
+            rotlosses[i] = sep_losses['loss_rot'].cpu().item()
 
-    print(loclosses.mean())
-    print(dimlosses.mean())
-    print(rotlosses.mean())
+    print(loclosses.mean(), loclosses.std())
+    print(dimlosses.mean(), dimlosses.std())
+    print(rotlosses.mean(), rotlosses.std())
     
 
 if __name__ == '__main__':
@@ -76,7 +76,8 @@ if __name__ == '__main__':
     n_data = pd.read_sql_query(f'SELECT COUNT(DISTINCT(imgnr)) FROM {TABLE}', db_con).values[0][0]
     print(n_data)
 
-    VAL_RANGE = (0,1000)
+    # VAL_RANGE = (0,1000)
+    VAL_RANGE = (1000,2000)
     # VAL_RANGE = (0,64)
 
     print(f"VAL_RANGE: {VAL_RANGE}")
@@ -95,7 +96,7 @@ if __name__ == '__main__':
     context = {
         'api':fishdetr3d_regular,
         'name':'regular',
-        'weightdir':"fish_statedicts/weights_2021-05-30/trainsession_2021-05-30T15h15m21s/detr_statedicts_epoch8_train0.1143_val0.1099.pth"
+        'weightdir':"fish_statedicts/weights_2021-05-31/trainsession_2021-05-31T16h26m22s/detr_statedicts_epoch10_train0.1116_val0.1060.pth"
     }
 
     api = context['api']
@@ -121,6 +122,12 @@ if __name__ == '__main__':
 
     get_stuff(model, criterion, device, valloader)
 
-    
 
-    
+    # 0.0028483110312372446                                                                               
+    # 0.004172523012384772
+    # 0.03850884599983692
+
+    # XTest
+    # 0.0030690934965386988 0.001118043372348415
+    # 0.004454518537037075 0.0018166043194410208
+    # 0.0376763304322958 0.004623436958799256

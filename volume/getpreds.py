@@ -82,7 +82,8 @@ if __name__ == '__main__':
     n_data = pd.read_sql_query(f'SELECT COUNT(DISTINCT(imgnr)) FROM {TABLE}', db_con).values[0][0]
     print(n_data)
 
-    VAL_RANGE = (0,1000)
+    # VAL_RANGE = (0,1000)
+    VAL_RANGE = (1000, 2000)
 
     print(f"VAL_RANGE: {VAL_RANGE}")
     valgen = Torch3DDataset(DATASET_DIR, TABLE, 1, shuffle=False, imgnrs=range(*VAL_RANGE))
@@ -102,8 +103,8 @@ if __name__ == '__main__':
 
     models_n_stuff = [
         {'api':fishdetr3d_regular,
-         'name':'regular60k',
-         'weightdir':"fish_statedicts/weights_2021-05-31/trainsession_2021-05-31T16h26m22s/detr_statedicts_epoch3_train0.1120_val0.1078.pth"},
+         'name':'regular60k_test',
+         'weightdir':"fish_statedicts/weights_2021-05-31/trainsession_2021-05-31T16h26m22s/detr_statedicts_epoch10_train0.1116_val0.1060.pth"},
         
         # {'api':fishdetr3d_regular,
         #  'name':'regular25k',

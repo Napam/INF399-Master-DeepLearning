@@ -263,9 +263,9 @@ if __name__ == '__main__':
 
     modelpath = os.path.join(
         WEIGHTS_DIR,
-        "weights_2021-05-30/",
-        "trainsession_2021-05-30T15h15m21s",
-        "detr_statedicts_epoch12_train0.1146_val0.1086.pth"
+        "weights_2021-05-31/",
+        "trainsession_2021-05-31T16h26m22s",
+        "last_epoch.pth"
     )
 
     db_con = sqlite3.connect(f'file:{os.path.join(DATADIR_TRAIN,"bboxes.db")}?mode=ro', uri=True)
@@ -318,11 +318,11 @@ if __name__ == '__main__':
     criterion = SetCriterion(6, matcher, weight_dict, eos_coef = 0.5, losses=losses)
     criterion = criterion.to(device)
 
-    optimizer.load_state_dict(loaded_weights['optimizer'])
-    criterion.load_state_dict(loaded_weights['criterion'])
-    # optimizer.param_groups[0]['lr'] = 1e-6
-    # optimizer.param_groups[0]['weight_decay'] = 1e-8
-    print('Optimizer and criterion successfully loaded with stored buffers')
+    # optimizer.load_state_dict(loaded_weights['optimizer'])
+    # criterion.load_state_dict(loaded_weights['criterion'])
+    optimizer.param_groups[0]['lr'] = 9e-7
+    optimizer.param_groups[0]['weight_decay'] = 1e-8
+    # print('Optimizer and criterion successfully loaded with stored buffers')
 
     # Will crash if I don't do this
     del loaded_weights
